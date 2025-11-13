@@ -100,7 +100,6 @@ class ExportUtils:
 
         headers = [
             'S.No', 'Course Code', 'Registration No', 'Student Name', 
-            'Course Name',
             'Attended', 'Total', 'Attendance %'
         ]
 
@@ -112,7 +111,6 @@ class ExportUtils:
                 str(r.course.course_code),
                 str(r.student.registration_no),
                 Paragraph(str(r.student.name or ''), cell_style),
-                Paragraph(str(r.course.course_name or ''), cell_style),
                 str(r.attended_periods),
                 str(r.conducted_periods),
                 f"{r.attendance_percentage:.0f}",
@@ -121,7 +119,7 @@ class ExportUtils:
         # Compute column widths based on header text width + padding
         header_font = 'Helvetica-Bold'
         header_font_size = 10
-        padding_lr = 3  # space on both sides
+        padding_lr = 12  # space on both sides
 
         header_min_widths = []
         for text in headers:
@@ -131,19 +129,17 @@ class ExportUtils:
         available_width = doc.width
 
         # Fixed columns (all except Student Name at index 3)
-        fixed_indexes = [0, 1, 2, 5, 6,7]
+        fixed_indexes = [0, 1, 2, 4, 5, 6]
         fixed_sum = sum(header_min_widths[i] for i in fixed_indexes)
 
         # Allocate remaining width to Student Name while ensuring at least header width
         name_min = header_min_widths[3]
-        name_min = header_min_widths[4]
-        name_width = max(name_min, available_width - fixed_sum)/2
+        name_width = max(name_min, available_width - fixed_sum)
 
         # If even header minimums exceed available width, cap name to its minimum
         # and proportionally scale other columns but never below their header minimums.
         col_widths = list(header_min_widths)
         col_widths[3] = name_width
-        col_widths[4] = name_width
         total_width = sum(col_widths)
         if total_width > available_width:
             # Compute scaling factor but clamp to not go below header minimums.
