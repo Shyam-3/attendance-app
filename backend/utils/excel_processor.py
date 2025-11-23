@@ -1,5 +1,6 @@
 import pandas as pd
 import re
+import time
 from backend.models import db, Student, Course, AttendanceRecord
 
 class ExcelProcessor:
@@ -200,80 +201,143 @@ class ExcelProcessor:
             print(f"Error processing dataframe: {e}")
             return None
     
-    def save_to_database(self, processed_data):
-        """Save the processed data to database"""
+    def save_to_database(self, processed_data, max_retries=2):
+        """Save the processed data to database with bulk operations and retry logic"""
         if not processed_data:
             return False
         
-        try:
-            # Save courses
-            for course_info in processed_data['courses'].values():
-                existing_course = Course.query.filter_by(course_code=course_info['code']).first()
-                if not existing_course:
-                    course = Course(
-                        course_code=course_info['code'],
-                        course_name=course_info['name']
-                    )
-                    db.session.add(course)
-            
-            # Save students
-            for student_data in processed_data['students']:
-                existing_student = Student.query.filter_by(registration_no=student_data['registration_no']).first()
-                if not existing_student:
-                    student = Student(
-                        admission_no=student_data['admission_no'],
-                        registration_no=student_data['registration_no'],
-                        name=student_data['name']
-                    )
-                    db.session.add(student)
-            
-            db.session.commit()  # Commit students and courses first
-            
-            # Save attendance records with improved logic
-            for attendance_data in processed_data['attendance']:
-                # Skip records with less than 5 conducted periods
-                if attendance_data['conducted_periods'] < 5:
-                    print(f"Skipping record for {attendance_data['registration_no']} - {attendance_data['course_code']}: Only {attendance_data['conducted_periods']} classes conducted (minimum 5 required)")
-                    continue
+        from sqlalchemy.exc import OperationalError
+        
+        for attempt in range(max_retries):
+            start_time = time.perf_counter()
+            try:
+            # ------------------------------
+            # 1. Prefetch existing courses
+            # ------------------------------
+                incoming_course_codes = {c['code'] for c in processed_data['courses'].values()}
+                existing_courses = Course.query.filter(Course.course_code.in_(incoming_course_codes)).all() if incoming_course_codes else []
+                course_map = {c.course_code: c for c in existing_courses}
+                new_courses = []
+                for c in incoming_course_codes:
+                    if c not in course_map:
+                        info = next(v for v in processed_data['courses'].values() if v['code'] == c)
+                        new_courses.append(Course(course_code=info['code'], course_name=info['name']))
+                if new_courses:
+                    db.session.add_all(new_courses)
+                    db.session.flush()  # Assign IDs
+                    for c in new_courses:
+                        course_map[c.course_code] = c
                 
-                student = Student.query.filter_by(registration_no=attendance_data['registration_no']).first()
-                course = Course.query.filter_by(course_code=attendance_data['course_code']).first()
+                # ------------------------------
+                # 2. Prefetch existing students
+                # ------------------------------
+                incoming_reg_nos = {s['registration_no'] for s in processed_data['students'] if s['registration_no']}
+                existing_students = Student.query.filter(Student.registration_no.in_(incoming_reg_nos)).all() if incoming_reg_nos else []
+                student_map = {s.registration_no: s for s in existing_students}
+                new_students = []
+                for s in processed_data['students']:
+                    reg = s['registration_no']
+                    if reg and reg not in student_map:
+                        new_students.append(Student(admission_no=s['admission_no'], registration_no=reg, name=s['name']))
+                if new_students:
+                    db.session.add_all(new_students)
+                    db.session.flush()
+                    for s in new_students:
+                        student_map[s.registration_no] = s
                 
-                if student and course:
-                    # Check if record already exists
-                    existing_record = AttendanceRecord.query.filter_by(
-                        student_id=student.id,
-                        course_id=course.id
-                    ).first()
-                    
-                    if existing_record:
-                        # Only update if new record has more conducted periods
-                        if attendance_data['conducted_periods'] > existing_record.conducted_periods:
-                            print(f"Updating record for {attendance_data['registration_no']} - {attendance_data['course_code']}: {existing_record.conducted_periods} -> {attendance_data['conducted_periods']} classes")
-                            existing_record.attended_periods = attendance_data['attended_periods']
-                            existing_record.conducted_periods = attendance_data['conducted_periods']
-                            existing_record.attendance_percentage = attendance_data['attendance_percentage']
+                # Commit base entities (courses & students) to ensure IDs are persistent
+                db.session.commit()
+                
+                # ------------------------------
+                # 3. Prepare attendance data (filter & group)
+                # ------------------------------
+                filtered_attendance = [a for a in processed_data['attendance'] if a['conducted_periods'] >= 5]
+                if not filtered_attendance:
+                    from backend.services.attendance_service import invalidate_cache
+                    invalidate_cache()
+                    print("No attendance records meet minimum conducted periods; nothing to insert.")
+                    return True
+                
+                # Build (student_id, course_id) pairs for existing lookup
+                pairs = []
+                for a in filtered_attendance:
+                    student = student_map.get(a['registration_no'])
+                    course = course_map.get(a['course_code'])
+                    if student and course:
+                        pairs.append((student.id, course.id))
+                
+                # ------------------------------
+                # 4. Bulk fetch existing attendance records
+                # ------------------------------
+                from sqlalchemy import tuple_
+                existing_attendance_records = []
+                if pairs:
+                    existing_attendance_records = db.session.query(AttendanceRecord).filter(
+                        tuple_(AttendanceRecord.student_id, AttendanceRecord.course_id).in_(pairs)
+                    ).all()
+                attendance_map = {(r.student_id, r.course_id): r for r in existing_attendance_records}
+                
+                # ------------------------------
+                # 5. Apply updates & collect new records
+                # ------------------------------
+                new_records = []
+                update_count = 0
+                skip_count = 0
+                for a in filtered_attendance:
+                    student = student_map.get(a['registration_no'])
+                    course = course_map.get(a['course_code'])
+                    if not student or not course:
+                        continue
+                    key = (student.id, course.id)
+                    existing = attendance_map.get(key)
+                    if existing:
+                        if a['conducted_periods'] > existing.conducted_periods:
+                            existing.attended_periods = a['attended_periods']
+                            existing.conducted_periods = a['conducted_periods']
+                            existing.attendance_percentage = a['attendance_percentage']
+                            update_count += 1
                         else:
-                            print(f"Skipping record for {attendance_data['registration_no']} - {attendance_data['course_code']}: Existing record has more/equal classes ({existing_record.conducted_periods} >= {attendance_data['conducted_periods']})")
+                            skip_count += 1
                     else:
-                        # Create new record
-                        print(f"Adding new record for {attendance_data['registration_no']} - {attendance_data['course_code']}: {attendance_data['conducted_periods']} classes")
-                        record = AttendanceRecord(
+                        new_records.append(AttendanceRecord(
                             student_id=student.id,
                             course_id=course.id,
-                            attended_periods=attendance_data['attended_periods'],
-                            conducted_periods=attendance_data['conducted_periods'],
-                            attendance_percentage=attendance_data['attendance_percentage']
-                        )
-                        db.session.add(record)
-            
-            db.session.commit()
-            return True
-            
-        except Exception as e:
-            db.session.rollback()
-            print(f"Error saving to database: {e}")
-            return False
+                            attended_periods=a['attended_periods'],
+                            conducted_periods=a['conducted_periods'],
+                            attendance_percentage=a['attendance_percentage']
+                        ))
+                
+                if new_records:
+                    db.session.add_all(new_records)
+                
+                db.session.commit()
+                
+                # Invalidate cache after successful data import
+                from backend.services.attendance_service import invalidate_cache
+                invalidate_cache()
+                
+                elapsed = (time.perf_counter() - start_time) * 1000
+                print(f"✓ Upload completed successfully!")
+                print(f"  Courses: {len(new_courses)} new, {len(course_map)-len(new_courses)} existing")
+                print(f"  Students: {len(new_students)} new, {len(student_map)-len(new_students)} existing")
+                print(f"  Attendance: {len(new_records)} new, {update_count} updated, {skip_count} skipped")
+                print(f"  Processing time: {elapsed:.2f} ms ({elapsed/1000:.2f}s)")
+                return True
+            except OperationalError as e:
+                if attempt == max_retries - 1:
+                    db.session.rollback()
+                    print(f"✗ Upload failed after {max_retries} attempts (OperationalError): {e}")
+                    return False
+                # Retry after disposing engine
+                print(f"⚠ Connection error on attempt {attempt + 1}, retrying...")
+                db.session.rollback()
+                db.engine.dispose()
+                time.sleep(0.5)
+            except Exception as e:
+                db.session.rollback()
+                elapsed = (time.perf_counter() - start_time) * 1000
+                print(f"✗ Upload failed after {elapsed:.2f} ms: {e}")
+                return False
     
     def cleanup_insufficient_records(self, min_conducted_periods=5):
         """Remove existing records that don't meet minimum conducted periods requirement"""
@@ -291,6 +355,11 @@ class ExcelProcessor:
             
             db.session.commit()
             print(f"Cleaned up {deleted_count} records with insufficient conducted periods")
+            
+            # Invalidate cache after cleanup
+            from backend.services.attendance_service import invalidate_cache
+            invalidate_cache()
+            
             return deleted_count
             
         except Exception as e:

@@ -53,7 +53,7 @@ The system provides real-time statistics, color-coded attendance indicators, and
 - **Individual record deletion**: Remove specific attendance records
 - **Bulk data clearing**: Clear all data with confirmation prompt
 - **Real-time updates**: UI updates immediately after data modifications
-- **Data persistence**: SQLite database for reliable storage
+- **Data persistence**: PostgreSQL (Supabase) or SQLite database for reliable storage
 
 ---
 
@@ -61,7 +61,7 @@ The system provides real-time statistics, color-coded attendance indicators, and
 
 ### Backend (Flask + SQLAlchemy)
 - **Framework**: Flask 3.0+ with RESTful API design
-- **Database**: SQLite with SQLAlchemy ORM
+- **Database**: PostgreSQL (Supabase) or SQLite with SQLAlchemy ORM
 - **Structure**:
   - `app.py` - Main application with route definitions
   - `backend/models.py` - Database models (Student, Course, AttendanceRecord)
@@ -96,7 +96,20 @@ The system provides real-time statistics, color-coded attendance indicators, and
    pip install -r requirements.txt
    ```
 
-2. **Start the Flask server**:
+2. **Configure Database** (Choose one):
+   
+   **Option A: PostgreSQL (Supabase) - Recommended for production**
+   - See [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for detailed setup instructions
+   - Create a `.env` file with your Supabase connection string:
+     ```
+     DATABASE_URL=postgresql://postgres:[PASSWORD]@db.xxxxx.supabase.co:5432/postgres
+     ```
+   
+   **Option B: SQLite - Quick local development**
+   - No configuration needed
+   - Database file will be created automatically at `instance/attendance.db`
+
+3. **Start the Flask server**:
    ```bash
    python app.py
    ```
@@ -166,6 +179,8 @@ The system provides real-time statistics, color-coded attendance indicators, and
 | XlsxWriter | 3.2+ | Excel file writing/export |
 | ReportLab | 4.0+ | PDF generation |
 | SQLAlchemy | 2.0+ | Database toolkit |
+| psycopg2-binary | 2.9+ | PostgreSQL adapter |
+| python-dotenv | 1.0+ | Environment variable management |
 | Werkzeug | 2.3+ | WSGI utilities |
 
 ### Frontend
@@ -233,15 +248,17 @@ See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed directory struct
 
 ## 🔒 Data Management
 
-- Database stored in `instance/attendance.db` (auto-created)
+- Database options:
+  - **PostgreSQL (Supabase)**: Cloud-hosted, recommended for production
+  - **SQLite**: Local file stored in `instance/attendance.db` (auto-created)
 - Uploaded files temporarily stored in `uploads/` directory
 - All exports are generated on-the-fly (not stored permanently)
 
 ---
 
-## 🚢 Deployment Notes
+## 🚀 Deployment Notes
 
-- **Database**: Consider PostgreSQL or MySQL for production
+- **Database**: Use PostgreSQL (Supabase recommended) for production - see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
 - **Static Files**: Use a CDN for frontend assets
 - **Environment Variables**: Configure `FRONTEND_URL` and `VITE_API_BASE_URL`
 - **Security**: Add authentication/authorization for production use

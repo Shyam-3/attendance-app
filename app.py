@@ -6,6 +6,10 @@ import sys
 # Prevent Python from generating .pyc files and __pycache__ folders
 sys.dont_write_bytecode = True
 
+# Load environment variables from .env file
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, request, redirect, jsonify
 from flask_cors import CORS
 
@@ -26,13 +30,20 @@ def create_app():
                          r"/export/*": {"origins": "*"},
                          r"/upload": {"origins": "*"},
                          r"/delete_record/*": {"origins": "*"},
-                         r"/clear_all_data": {"origins": "*"}})
+                         r"/clear_all_data": {"origins": "*"},
+                         r"/health": {"origins": "*"}})
     
-    # Initialize database
-    init_db(app)
-    
-    # Initialize configuration
+    # Initialize configuration first
     Config.init_app(app)
+    
+    # Initialize database with retry logic
+    try:
+        init_db(app)
+        print("✓ Database initialized successfully!")
+    except Exception as e:
+        print(f"✗ Database initialization failed: {e}")
+        print("Please check your DATABASE_URL in .env file")
+        raise
     
     return app
 
@@ -50,6 +61,30 @@ def allowed_file(filename):
 def dashboard():
     """Redirect root to React frontend"""
     return redirect(Config.FRONTEND_URL)
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint to verify database connection"""
+    try:
+        # Test database connection
+        db.session.execute(db.text('SELECT 1'))
+        db.session.commit()
+        
+        # Get database info
+        db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+        db_type = 'PostgreSQL (Supabase)' if 'postgresql' in db_uri else 'SQLite'
+        
+        return jsonify({
+            'status': 'healthy',
+            'database': db_type,
+            'message': 'Database connection successful'
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'message': 'Database connection failed'
+        }), 500
 
 @app.route('/upload')
 def upload_page():
@@ -300,9 +335,18 @@ def internal_error(error):
 
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all()
-        print("✅ Database initialized successfully")
+        # Tables are already created in create_app(), just verify
+        print("✅ Database ready")
         print("🚀 Starting Attendance Management System...")
-        print("📱 Access at: http://127.0.0.1:5000")
+        print("📱 Backend API: http://127.0.0.1:5000")
+        print("📊 Health check: http://127.0.0.1:5000/health")
+        
+    # Use reloader only in development with SQLite
+    use_reloader = app.config['DEBUG'] and 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'].lower()
     
-    app.run(debug=True)
+    app.run(
+        host='127.0.0.1',
+        port=5000,
+        debug=app.config['DEBUG'],
+        use_reloader=use_reloader
+    )

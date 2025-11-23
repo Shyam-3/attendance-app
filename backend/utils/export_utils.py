@@ -1,11 +1,23 @@
 """
 Utilities for exporting attendance data to Excel and PDF with formatting.
-Matches the layout shown in export_utils1.py (styled headers, auto widths, timestamped filenames),
-while keeping the same public methods used by the app.
+
+Data Format:
+All exports use dict format optimized for Supabase/PostgreSQL. Each record is a dict with keys:
+- id: int
+- registration_no: str
+- student_name: str
+- course_code: str
+- course_name: str
+- attended_periods: int
+- conducted_periods: int
+- attendance_percentage: float
+
+This format is returned by attendance_service.get_filtered_attendance_records()
+and avoids ORM object overhead for better performance with remote databases.
 """
 import io
-from datetime import datetime
 import pandas as pd
+from datetime import datetime
 from flask import make_response
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -22,6 +34,10 @@ class ExportUtils:
     def generate_excel_export(self, data, filter_info=None, filename_prefix: str = "attendance"):
         """Generate formatted Excel from export-ready rows (list of dict)."""
         df = pd.DataFrame(data or [])
+        
+        # Remove the 'id' column if present
+        if 'id' in df.columns:
+            df = df.drop(columns=['id'])
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
@@ -106,14 +122,22 @@ class ExportUtils:
         # Build table rows; wrap Student Name with Paragraph for proper wrapping
         table_data = [headers]
         for i, r in enumerate(records or [], 1):
+            # Use dict format (optimized for Supabase/PostgreSQL)
+            course_code = str(r.get('course_code', ''))
+            registration_no = str(r.get('registration_no', ''))
+            student_name = str(r.get('student_name', ''))
+            attended = str(r.get('attended_periods', ''))
+            conducted = str(r.get('conducted_periods', ''))
+            percentage = r.get('attendance_percentage', 0)
+            
             table_data.append([
                 str(i),
-                str(r.course.course_code),
-                str(r.student.registration_no),
-                Paragraph(str(r.student.name or ''), cell_style),
-                str(r.attended_periods),
-                str(r.conducted_periods),
-                f"{r.attendance_percentage:.0f}",
+                course_code,
+                registration_no,
+                Paragraph(student_name, cell_style),
+                attended,
+                conducted,
+                f"{percentage:.0f}",
             ])
 
         # Compute column widths based on header text width + padding
@@ -176,12 +200,14 @@ class ExportUtils:
             ('GRID', (0, 0), (-1, -1), 1, colors.black),
         ])
 
-        # Row highlighting like the original utility
+        # Row highlighting (dict format - Supabase optimized)
         for i, r in enumerate(records or [], 1):
             row_index = i
-            if r.attendance_percentage < 65:
+            percentage = r.get('attendance_percentage', 0)
+            
+            if percentage < 65:
                 table_style.add('BACKGROUND', (0, row_index), (-1, row_index), colors.lightcoral)
-            elif r.attendance_percentage < 75:
+            elif percentage < 75:
                 table_style.add('BACKGROUND', (0, row_index), (-1, row_index), colors.lightyellow)
             else:
                 table_style.add('BACKGROUND', (0, row_index), (-1, row_index), colors.lightgreen)

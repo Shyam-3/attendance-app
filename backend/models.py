@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timezone
+from sqlalchemy import Index
 
 db = SQLAlchemy()
 
@@ -8,9 +9,9 @@ class Student(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     admission_no = db.Column(db.String(50), nullable=False)
-    registration_no = db.Column(db.String(50), nullable=False, unique=True)
-    name = db.Column(db.String(100), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    registration_no = db.Column(db.String(50), nullable=False, unique=True, index=True)
+    name = db.Column(db.String(100), nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationship to attendance records
     attendance_records = db.relationship('AttendanceRecord', backref='student', lazy=True, cascade='all, delete-orphan')
@@ -22,9 +23,9 @@ class Course(db.Model):
     __tablename__ = 'courses'
     
     id = db.Column(db.Integer, primary_key=True)
-    course_code = db.Column(db.String(20), nullable=False, unique=True)
+    course_code = db.Column(db.String(20), nullable=False, unique=True, index=True)
     course_name = db.Column(db.String(200), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Relationship to attendance records
     attendance_records = db.relationship('AttendanceRecord', backref='course', lazy=True, cascade='all, delete-orphan')
@@ -36,15 +37,18 @@ class AttendanceRecord(db.Model):
     __tablename__ = 'attendance_records'
     
     id = db.Column(db.Integer, primary_key=True)
-    student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
-    course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
+    student_id = db.Column(db.Integer, db.ForeignKey('students.id', ondelete='CASCADE'), nullable=False, index=True)
+    course_id = db.Column(db.Integer, db.ForeignKey('courses.id', ondelete='CASCADE'), nullable=False, index=True)
     attended_periods = db.Column(db.Integer, nullable=False)
     conducted_periods = db.Column(db.Integer, nullable=False)
-    attendance_percentage = db.Column(db.Float, nullable=False)
-    upload_date = db.Column(db.DateTime, default=datetime.utcnow)
+    attendance_percentage = db.Column(db.Float, nullable=False, index=True)
+    upload_date = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
-    # Ensure unique combination of student and course
-    __table_args__ = (db.UniqueConstraint('student_id', 'course_id', name='unique_student_course'),)
+    # Ensure unique combination of student and course with composite index
+    __table_args__ = (
+        db.UniqueConstraint('student_id', 'course_id', name='unique_student_course'),
+        Index('idx_student_course_percentage', 'student_id', 'course_id', 'attendance_percentage'),
+    )
     
     @property
     def is_below_threshold(self):
