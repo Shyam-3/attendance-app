@@ -109,11 +109,11 @@ The system provides real-time statistics, color-coded attendance indicators, and
    - No configuration needed
    - Database file will be created automatically at `instance/attendance.db`
 
-3. **Start the Flask server**:
-   ```bash
-   python app.py
-   ```
-   The backend API will run on `http://127.0.0.1:5000`
+3. **Start the Flask server (local dev)**:
+  ```cmd
+  python app.py
+  ```
+  The backend API runs on `http://127.0.0.1:8080` (Cloud Run compatible binding).
 
 ### Frontend Setup
 
@@ -128,10 +128,10 @@ The system provides real-time statistics, color-coded attendance indicators, and
    ```
 
 3. **Start the development server**:
-   ```bash
-   npm run dev
-   ```
-   The frontend will run on `http://127.0.0.1:5173`
+  ```cmd
+  npm run dev
+  ```
+  The frontend runs on `http://127.0.0.1:5173`.
 
 4. **Open in browser**:
    Navigate to `http://127.0.0.1:5173`
@@ -256,13 +256,102 @@ See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed directory struct
 
 ---
 
-## 🚀 Deployment Notes
+## 🚀 Deployment
 
-- **Database**: Use PostgreSQL (Supabase recommended) for production - see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
-- **Static Files**: Use a CDN for frontend assets
-- **Environment Variables**: Configure `FRONTEND_URL` and `VITE_API_BASE_URL`
-- **Security**: Add authentication/authorization for production use
-- **CORS**: Restrict CORS origins in production
+### Railway (Backend) - Recommended Free Tier
+Railway offers a generous free tier ($5 monthly credit) and seamless Git-based deployments.
+
+**Quick Deploy Steps:**
+1. **Push to GitHub** (if not already done):
+   ```cmd
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+   git push -u origin main
+   ```
+
+2. **Deploy on Railway**:
+   - Visit [railway.app](https://railway.app) and sign in with GitHub
+   - Click "New Project" → "Deploy from GitHub repo"
+   - Select your `attendance-monitor` repository
+   - Railway auto-detects Python and uses `railway.json`, `Procfile`, and `requirements.txt`
+
+3. **Configure Environment Variables** (in Railway dashboard):
+   - `DATABASE_URL`: Your Supabase connection string (use pooler port 6543)
+   - `FRONTEND_URL`: Your frontend URL (e.g., `https://your-app.web.app`)
+   - `DEBUG`: `false` (for production)
+   - `PYTHONDONTWRITEBYTECODE`: `1`
+
+4. **Get your Railway URL**:
+   - Railway generates a URL like `https://your-app.up.railway.app`
+   - Use this as your backend API URL
+
+**Railway Config Files:**
+- `railway.json`: Deployment config with healthcheck
+- `runtime.txt`: Python version (3.11.9)
+- `Procfile`: Gunicorn start command
+- `.railwayignore`: Excludes frontend files from backend build
+
+### Firebase Hosting (Frontend)
+Deploy your React frontend to Firebase for free static hosting.
+
+1. **Configure Firebase**:
+   - Edit `frontend/.firebaserc` and set your Firebase project ID
+   
+2. **Build and Deploy**:
+   ```cmd
+   cd frontend
+   npm install
+   npm run build
+   npx firebase login
+   npx firebase use YOUR_PROJECT_ID
+   npx firebase deploy
+   ```
+
+3. **Update Frontend API URL**:
+   - Create `frontend/.env` with:
+     ```
+     VITE_API_BASE_URL=https://your-app.up.railway.app
+     ```
+   - Rebuild and redeploy after updating
+
+### Alternative: Docker Deployment (Cloud Run, Render, etc.)
+If you prefer Docker-based deployment:
+```cmd
+docker build -t attendance-backend .
+docker run -p 8080:8080 --env-file .env attendance-backend
+```
+
+For Cloud Run:
+```cmd
+gcloud builds submit --tag gcr.io/PROJECT_ID/attendance-backend
+gcloud run deploy attendance-backend --image gcr.io/PROJECT_ID/attendance-backend --platform managed --region REGION --set-env-vars "DATABASE_URL=YOUR_DB_URL,FRONTEND_URL=https://YOUR_FRONTEND"
+```
+
+### Environment Variables Reference
+- **Backend** (`.env.example`): `DATABASE_URL`, `FRONTEND_URL`, `DEBUG`, `PYTHONDONTWRITEBYTECODE`
+- **Frontend** (`frontend/.env.example`): `VITE_API_BASE_URL`
+
+### Post-Deployment Checklist
+- ✅ Update `VITE_API_BASE_URL` in frontend `.env` to Railway URL
+- ✅ Set `FRONTEND_URL` in Railway to your Firebase Hosting domain
+- ✅ Verify `/health` endpoint returns success
+- ✅ Test file upload, filtering, and exports
+- ✅ Check Railway logs for any errors
+
+### Scaling for Multi-User Load
+When adding authentication and expecting concurrent users:
+- **Horizontal Scaling**: Railway auto-scales; configure max replicas in settings
+- **Background Jobs**: Add Redis + Celery for async file processing and exports
+- **Caching**: Use Railway's Redis plugin to cache stats and frequent queries
+- **Database**: Ensure Supabase pooler is used (port 6543) with proper connection limits
+- **Monitoring**: Enable Railway metrics and set up alerts for high CPU/memory
+
+**Free Tier Limits:**
+- Railway: $5/month credit (~500 hours of hobby plan)
+- Firebase Hosting: 10GB storage, 360MB/day bandwidth
+- Supabase: 500MB database, 2GB bandwidth, 50MB file storage
 
 ---
 

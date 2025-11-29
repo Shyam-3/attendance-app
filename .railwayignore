@@ -1,0 +1,25 @@
+# Exclude frontend build artifacts and development files from Railway backend deployment
+frontend/
+node_modules/
+*.log
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+htmlcov/
+.env.local
+.env.*.local
+uploads/*
+!uploads/.gitkeep
+instance/
