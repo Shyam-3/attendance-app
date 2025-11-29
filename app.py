@@ -71,13 +71,9 @@ def health_check():
         db.session.execute(db.text('SELECT 1'))
         db.session.commit()
         
-        # Get database info
-        db_uri = app.config['SQLALCHEMY_DATABASE_URI']
-        db_type = 'PostgreSQL (Supabase)' if 'postgresql' in db_uri else 'SQLite'
-        
         return jsonify({
             'status': 'healthy',
-            'database': db_type,
+            'database': 'PostgreSQL (Supabase)',
             'message': 'Database connection successful'
         }), 200
     except Exception as e:
@@ -405,18 +401,14 @@ def internal_error(error):
 
 if __name__ == '__main__':
     with app.app_context():
-        # Tables are already created in create_app(), just verify
         print("✅ Database ready")
         print("🚀 Starting Attendance Management System...")
         print("📱 Backend API: http://127.0.0.1:5000")
         print("📊 Health check: http://127.0.0.1:5000/health")
-        
-    # Use reloader only in development with SQLite
-    use_reloader = app.config['DEBUG'] and 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'].lower()
     
     app.run(
         host='127.0.0.1',
         port=5000,
         debug=app.config['DEBUG'],
-        use_reloader=use_reloader
+        use_reloader=app.config['DEBUG']
     )

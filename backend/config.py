@@ -4,45 +4,44 @@ Configuration settings for the Attendance Management System
 import os
 
 class Config:
-    # Database configuration
-    # PostgreSQL/Supabase connection string (required for production)
+    # Database configuration - PostgreSQL/Supabase only
     DATABASE_URL = os.environ.get('DATABASE_URL')
     
-    # Handle Supabase connection string format and add necessary parameters
-    if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL environment variable is required. Please configure your PostgreSQL/Supabase connection string in .env file.")
+    
+    # Handle Supabase connection string format
+    if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     
     # Add connection parameters for Windows compatibility and reliability
-    if DATABASE_URL and 'postgresql' in DATABASE_URL:
-        # Add gssencmode=disable if not present (prevents IPv6 issues on Windows)
-        if 'gssencmode' not in DATABASE_URL:
-            separator = '&' if '?' in DATABASE_URL else '?'
-            DATABASE_URL = f"{DATABASE_URL}{separator}gssencmode=disable"
-        
-        # Add sslmode=require if not present (recommended for Supabase)
-        if 'sslmode' not in DATABASE_URL:
-            separator = '&' if '?' in DATABASE_URL else '?'
-            DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
+    if 'gssencmode' not in DATABASE_URL:
+        separator = '&' if '?' in DATABASE_URL else '?'
+        DATABASE_URL = f"{DATABASE_URL}{separator}gssencmode=disable"
     
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL or 'sqlite:///attendance.db'
+    if 'sslmode' not in DATABASE_URL:
+        separator = '&' if '?' in DATABASE_URL else '?'
+        DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
+    
+    SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
-    # Optimized connection pool settings for PostgreSQL/Supabase
+    # PostgreSQL/Supabase connection pool settings
     SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 5,               # Reduced for stability (was 10)
-        'pool_recycle': 280,          # Recycle connections before Supabase's 300s timeout
-        'pool_pre_ping': True,        # Verify connections before using
-        'pool_timeout': 20,           # Reduced timeout for faster failure detection
-        'max_overflow': 3,            # Reduced overflow (was 5)
-        'echo_pool': False,           # Disable pool logging for performance
+        'pool_size': 5,
+        'pool_recycle': 280,
+        'pool_pre_ping': True,
+        'pool_timeout': 20,
+        'max_overflow': 3,
+        'echo_pool': False,
         'connect_args': {
-            'connect_timeout': 10,    # Connection timeout in seconds
-            'options': '-c timezone=utc -c statement_timeout=30000',  # Added query timeout
-            'keepalives': 1,          # Enable TCP keepalive
-            'keepalives_idle': 30,    # Start keepalive after 30s
-            'keepalives_interval': 10, # Keepalive interval
-            'keepalives_count': 5     # Number of keepalive probes
-        } if DATABASE_URL and 'postgresql' in (DATABASE_URL or '') else {}
+            'connect_timeout': 10,
+            'options': '-c timezone=utc -c statement_timeout=30000',
+            'keepalives': 1,
+            'keepalives_idle': 30,
+            'keepalives_interval': 10,
+            'keepalives_count': 5
+        }
     }
     
     # File upload configuration
@@ -58,11 +57,6 @@ class Config:
     @staticmethod
     def init_app(app):
         # Log database connection info (without password)
-        if app.config['SQLALCHEMY_DATABASE_URI']:
-            db_uri = app.config['SQLALCHEMY_DATABASE_URI']
-            if 'postgresql' in db_uri:
-                # Mask password in logs
-                safe_uri = db_uri.split('@')[1] if '@' in db_uri else 'localhost'
-                print(f"✓ Using PostgreSQL database at: {safe_uri}")
-            else:
-                print("✓ Using SQLite database (local development)")
+        db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+        safe_uri = db_uri.split('@')[1] if '@' in db_uri else 'localhost'
+        print(f"✓ Using PostgreSQL/Supabase database at: {safe_uri}")

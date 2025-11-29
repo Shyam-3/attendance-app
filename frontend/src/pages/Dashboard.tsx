@@ -58,11 +58,22 @@ export default function Dashboard() {
   const excludeDropdownRef = useRef(null);
   const thresholdDropdownRef = useRef(null);
   const perPageDropdownRef = useRef(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const suppressPageLoadRef = useRef(false);
+  const debounceTimerRef = useRef<number | null>(null);
 
-  // Real-time filtering (excluding perPage): reset to page 1 and refresh filtered stats
+  // Filter changes: reset to page 1 and debounce loads
   useEffect(() => {
+    suppressPageLoadRef.current = true; // prevent immediate page-change load
     setCurrentPage(1);
-    loadFilteredStats();
+
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = window.setTimeout(() => {
+      load();
+      loadFilteredStats();
+    }, 250);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course, threshold, search, excludeCourses]);
 
@@ -82,6 +93,11 @@ export default function Dashboard() {
 
   // Load data when page changes
   useEffect(() => {
+    if (suppressPageLoadRef.current) {
+      // consume the suppression once
+      suppressPageLoadRef.current = false;
+      return;
+    }
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
@@ -125,6 +141,7 @@ export default function Dashboard() {
 
   async function load() {
     try {
+      setIsLoading(true);
       const data = await fetchAttendance({ course, threshold, search, exclude_courses: excludeCourses, page: currentPage, per_page: perPage });
       
       // Handle both paginated and non-paginated responses
@@ -142,6 +159,8 @@ export default function Dashboard() {
       console.error('Error loading attendance data:', e);
       setRows([]);
       setTotalRecords(0);
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -353,9 +372,9 @@ export default function Dashboard() {
         {/* Filters Section */}
         <div className="filter-section">
           <h5 className="mb-3"><i className="fas fa-filter me-2"></i>Filters</h5>
-          {/* First Row: Course, Threshold, Search */}
-          <div className="row mb-3">
-            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
+          {/* Single Row: Course, Exclude Courses, Threshold, Search, Clear Button */}
+          <div className="row mb-4 align-items-end">
+            <div className="col-lg col-md-6 col-sm-12 mb-3 mb-lg-0">
               <label className="form-label">Course</label>
               <div
                 className="dropdown"
@@ -429,7 +448,68 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
+            <div className="col-lg col-md-6 col-sm-12 mb-3 mb-lg-0">
+              <label className="form-label">Exclude Courses</label>
+              <div
+                className="dropdown"
+                ref={excludeDropdownRef}
+                onMouseEnter={() => !excludeDropdownFixed && !course && setExcludeDropdownOpen(true)}
+                onMouseLeave={() => !excludeDropdownFixed && setExcludeDropdownOpen(false)}
+                onClick={() => {
+                  if (!course) {
+                    setExcludeDropdownOpen(true);
+                    setExcludeDropdownFixed(f => !f);
+                  }
+                }}
+                style={{ position: 'relative' }}
+              >
+                <button
+                  className="btn btn-outline-secondary dropdown-toggle w-100 text-start filter-dropdown-btn filter-dropdown-btn-custom"
+                  type="button"
+                  data-bs-toggle="dropdown"
+                  aria-expanded={excludeDropdownOpen}
+                  disabled={!!course}
+                >
+                  <span className="filter-dropdown-span">
+                    {excludeCourses.length === 0 ? 'None' : `${excludeCourses.length} excluded`}
+                  </span>
+                </button>
+                <div
+                  className={`dropdown-menu p-3 filter-dropdown-menu filter-dropdown-menu-custom${excludeDropdownOpen ? ' show' : ''}`}
+                >
+                  {courses.filter(c => c.code !== course).length === 0 ? (
+                    <div className="text-muted filter-dropdown-empty">No courses available</div>
+                  ) : (
+                    courses.filter(c => c.code !== course).map((c, index, array) => (
+                      <div
+                        key={c.code}
+                        className={`form-check filter-dropdown-check${index === array.length - 1 ? ' last' : ''}`}
+                      >
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={excludeCourses.includes(c.code)}
+                          onChange={() => {
+                            if (excludeCourses.includes(c.code)) {
+                              setExcludeCourses(excludeCourses.filter(code => code !== c.code));
+                            } else {
+                              setExcludeCourses([...excludeCourses, c.code]);
+                            }
+                          }}
+                        />
+                        <label
+                          className="form-check-label filter-dropdown-label"
+                        >
+                          {c.code} - {c.name}
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="col-lg col-md-6 col-sm-12 mb-3 mb-lg-0">
               <label className="form-label">Threshold</label>
               <div
                 className="dropdown"
@@ -532,7 +612,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="col-md-6 col-sm-12 mb-3 mb-md-0">
+            <div className="col-lg col-md-6 col-sm-12 mb-3 mb-lg-0">
               <label className="form-label">Search Student</label>
               <div className="search-box">
                 <i className="fas fa-search"></i>
@@ -541,145 +621,27 @@ export default function Dashboard() {
                   className="form-control"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name or reg..."
+                  placeholder="Search by name or registration number"
                   title="You can search by student name or registration number"
                   aria-label="Search by name or registration number"
                 />
               </div>
             </div>
-          </div>
 
-          {/* Second Row: Exclude Courses, Entries Per Page, Clear Button */}
-          <div className="row mb-4">
-            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
-              <label className="form-label">Exclude Courses</label>
-              <div
-                className="dropdown"
-                ref={excludeDropdownRef}
-                onMouseEnter={() => !excludeDropdownFixed && !course && setExcludeDropdownOpen(true)}
-                onMouseLeave={() => !excludeDropdownFixed && setExcludeDropdownOpen(false)}
-                onClick={() => {
-                  if (!course) {
-                    setExcludeDropdownOpen(true);
-                    setExcludeDropdownFixed(f => !f);
-                  }
-                }}
-                style={{ position: 'relative' }}
-              >
-                <button
-                  className="btn btn-outline-secondary dropdown-toggle w-100 text-start filter-dropdown-btn filter-dropdown-btn-custom"
-                  type="button"
-                  data-bs-toggle="dropdown"
-                  aria-expanded={excludeDropdownOpen}
-                  disabled={!!course}
-                >
-                  <span className="filter-dropdown-span">
-                    {excludeCourses.length === 0 ? 'None' : `${excludeCourses.length} excluded`}
-                  </span>
-                </button>
-                <div
-                  className={`dropdown-menu p-3 filter-dropdown-menu filter-dropdown-menu-custom${excludeDropdownOpen ? ' show' : ''}`}
-                >
-                  {courses.filter(c => c.code !== course).length === 0 ? (
-                    <div className="text-muted filter-dropdown-empty">No courses available</div>
-                  ) : (
-                    courses.filter(c => c.code !== course).map((c, index, array) => (
-                      <div
-                        key={c.code}
-                        className={`form-check filter-dropdown-check${index === array.length - 1 ? ' last' : ''}`}
-                      >
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          checked={excludeCourses.includes(c.code)}
-                          onChange={() => {
-                            if (excludeCourses.includes(c.code)) {
-                              setExcludeCourses(excludeCourses.filter(code => code !== c.code));
-                            } else {
-                              setExcludeCourses([...excludeCourses, c.code]);
-                            }
-                          }}
-                        />
-                        <label
-                          className="form-check-label filter-dropdown-label"
-                        >
-                          {c.code} - {c.name}
-                        </label>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
-              <label className="form-label">Entries Per Page</label>
-              <div
-                className="dropdown"
-                ref={perPageDropdownRef}
-                onMouseEnter={() => !perPageDropdownFixed && !perPageJustSelected && setPerPageDropdownOpen(true)}
-                onMouseLeave={() => !perPageDropdownFixed && !perPageJustSelected && setPerPageDropdownOpen(false)}
-                style={{ position: 'relative' }}
-              >
-                <button
-                  className="btn btn-outline-secondary dropdown-toggle w-100 text-start filter-dropdown-btn filter-dropdown-btn-custom"
-                  type="button"
-                  data-bs-toggle="dropdown"
-                  aria-expanded={perPageDropdownOpen}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setPerPageDropdownOpen(true);
-                    setPerPageDropdownFixed(f => !f);
-                  }}
-                >
-                  <span className="filter-dropdown-span">
-                    {perPage} entries
-                  </span>
-                </button>
-                <div
-                  className={`dropdown-menu p-3 filter-dropdown-menu filter-dropdown-menu-custom${perPageDropdownOpen ? ' show' : ''}`}
-                >
-                  {[50, 100, 200].map((value, index) => (
-                    <div
-                      key={value}
-                      className={`form-check filter-dropdown-check${index === 2 ? ' last' : ''}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePerPageChange(value);
-                      }}
-                    >
-                      <input
-                        className="form-check-input"
-                        type="radio"
-                        name="perPageFilter"
-                        checked={perPage === value}
-                        onChange={() => {}}
-                      />
-                      <label
-                        className="form-check-label filter-dropdown-label"
-                      >
-                        {value} entries
-                      </label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-6 col-sm-12 d-flex align-items-end">
+            <div className="col-lg-auto col-md-12 col-sm-12">
               <button
-                className="btn btn-outline-secondary"
+                className="btn btn-outline-secondary w-100 w-lg-auto"
                 onClick={() => {
                   setCourse('');
                   setThreshold(75);
                   setSearch('');
                   setExcludeCourses([]);
-                  setPerPage(100);
+                  setPerPage(50);
                   setCurrentPage(1);
                 }}
                 title="Clear all filters"
               >
-                <i className="fas fa-times me-2"></i>Clear Filters
+                <i className="fas fa-times me-2"></i>Clear
               </button>
             </div>
           </div>
@@ -722,6 +684,12 @@ export default function Dashboard() {
 
         {rows.length > 0 && (
           <div className="attendance-table">
+            {isLoading && (
+              <div className="mb-2 small text-muted d-flex align-items-center" aria-live="polite">
+                <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                Updating…
+              </div>
+            )}
             <div className="table-responsive">
               <table className="table table-hover mb-0" id="attendance-table">
                 <thead className="table-dark">
@@ -786,16 +754,58 @@ export default function Dashboard() {
             <div className="col-12">
               <nav aria-label="Page navigation">
                 <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
-                  <div className="text-muted small">
-                    <strong>Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, totalRecords)} of {totalRecords} entries</strong>
-                    {(() => {
-                      const totalPages = Math.ceil(totalRecords / perPage);
-                      return totalPages > 1 ? (
-                        <span className="ms-2">
-                          (Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>)
-                        </span>
-                      ) : null;
-                    })()}
+                  <div className="d-flex align-items-center gap-3">
+                    <div
+                      className="dropdown"
+                      ref={perPageDropdownRef}
+                      onMouseEnter={() => !perPageDropdownFixed && !perPageJustSelected && setPerPageDropdownOpen(true)}
+                      onMouseLeave={() => !perPageDropdownFixed && !perPageJustSelected && setPerPageDropdownOpen(false)}
+                      style={{ position: 'relative' }}
+                    >
+                      <button
+                        className="btn btn-sm btn-outline-secondary dropdown-toggle"
+                        type="button"
+                        data-bs-toggle="dropdown"
+                        aria-expanded={perPageDropdownOpen}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPerPageDropdownOpen(true);
+                          setPerPageDropdownFixed(f => !f);
+                        }}
+                        style={{ minWidth: '90px' }}
+                      >
+                        {perPage} rows
+                      </button>
+                      <div
+                        className={`dropdown-menu p-2${perPageDropdownOpen ? ' show' : ''}`}
+                        style={{ minWidth: '90px' }}
+                      >
+                        {[50, 100, 200, 500].map((value) => (
+                          <div
+                            key={value}
+                            className="dropdown-item cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePerPageChange(value);
+                            }}
+                            style={{ cursor: 'pointer', padding: '0.25rem 0.75rem' }}
+                          >
+                            {value} rows
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="text-muted small">
+                      <strong>Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, totalRecords)} of {totalRecords} records</strong>
+                      {(() => {
+                        const totalPages = Math.ceil(totalRecords / perPage);
+                        return totalPages > 1 ? (
+                          <span className="ms-2">
+                            (Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>)
+                          </span>
+                        ) : null;
+                      })()}
+                    </div>
                   </div>
                   <ul className="pagination pagination-sm mb-0">
                     <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
@@ -822,7 +832,7 @@ export default function Dashboard() {
                     {(() => {
                       const totalPages = Math.ceil(totalRecords / perPage);
                       const pages = [];
-                      const maxVisible = 5;
+                      const maxVisible = 3; // Max number of page buttons to show
                       
                       let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
                       let endPage = Math.min(totalPages, startPage + maxVisible - 1);
