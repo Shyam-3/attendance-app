@@ -63,4 +63,20 @@ def init_db(app):
     
     with app.app_context():
         db.create_all()
+
+        # If using PostgreSQL, ensure useful extensions and indexes exist to speed up searches
+        try:
+            engine = db.get_engine(app)
+            if engine.dialect.name == 'postgresql':
+                with engine.connect() as conn:
+                    # Enable trigram extension for faster ILIKE searches
+                    conn.execute(db.text('CREATE EXTENSION IF NOT EXISTS pg_trgm'))
+                    # Create GIN trigram indexes for name and registration_no
+                    conn.execute(db.text("CREATE INDEX IF NOT EXISTS ix_students_name_trgm ON students USING gin (name gin_trgm_ops)"))
+                    conn.execute(db.text("CREATE INDEX IF NOT EXISTS ix_students_registration_no_trgm ON students USING gin (registration_no gin_trgm_ops)"))
+                    conn.execute(db.text("CREATE INDEX IF NOT EXISTS ix_courses_course_code_trgm ON courses USING gin (course_code gin_trgm_ops)"))
+        except Exception:
+            # Non-fatal: extension/index creation best-effort only
+            pass
+
         print("Database tables created successfully!")

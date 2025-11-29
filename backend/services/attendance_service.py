@@ -103,11 +103,11 @@ class AttendanceService:
             query = query.filter(~Course.course_code.in_(exclude_courses))
         
         if search:
-            search_lower = search.lower()
+            pattern = f"%{search}%"
             query = query.filter(
                 db.or_(
-                    func.lower(Student.name).contains(search_lower),
-                    func.lower(Student.registration_no).contains(search_lower)
+                    Student.name.ilike(pattern),
+                    Student.registration_no.ilike(pattern)
                 )
             )
         
@@ -131,8 +131,8 @@ class AttendanceService:
                 func.count(distinct(AttendanceRecord.course_id)).label('course_count')
             ).select_from(AttendanceRecord).join(Student).join(Course).filter(
                 db.or_(
-                    func.lower(Student.name).contains(search.lower()),
-                    func.lower(Student.registration_no).contains(search.lower())
+                    Student.name.ilike(f"%{search}%"),
+                    Student.registration_no.ilike(f"%{search}%")
                 )
             )
             
@@ -173,7 +173,7 @@ class AttendanceService:
     
     @staticmethod
     @retry_on_operational_error()
-    def get_filtered_attendance_records(course_code=None, threshold=75, search=None, exclude_courses=None, page=1, per_page=1000):
+    def get_filtered_attendance_records(course_code=None, threshold=75, search=None, exclude_courses=None, page=1, per_page=100):
         """Get attendance records with applied filters - OPTIMIZED with pagination and column projection"""
         # Use optimized query with only needed columns
         query = db.session.query(
@@ -198,11 +198,12 @@ class AttendanceService:
             query = query.filter(AttendanceRecord.attendance_percentage < threshold)
         
         if search:
-            search_lower = search.lower()
+            # Use ILIKE for PostgreSQL which can be accelerated with trigram indexes if needed
+            pattern = f"%{search}%"
             query = query.filter(
                 db.or_(
-                    func.lower(Student.name).contains(search_lower),
-                    func.lower(Student.registration_no).contains(search_lower)
+                    Student.name.ilike(pattern),
+                    Student.registration_no.ilike(pattern)
                 )
             )
         
@@ -236,6 +237,34 @@ class AttendanceService:
             })
         
         return records
+    
+    @staticmethod
+    @retry_on_operational_error()
+    def get_filtered_attendance_count(course_code=None, threshold=75, search=None, exclude_courses=None):
+        """Get total count of filtered attendance records for pagination"""
+        # Build query for count
+        query = db.session.query(func.count(AttendanceRecord.id)).select_from(AttendanceRecord).join(Student).join(Course)
+        
+        # Apply filters (same as get_filtered_attendance_records)
+        if course_code:
+            query = query.filter(Course.course_code == course_code)
+        
+        if exclude_courses:
+            query = query.filter(~Course.course_code.in_(exclude_courses))
+        
+        if threshold < 100:
+            query = query.filter(AttendanceRecord.attendance_percentage < threshold)
+        
+        if search:
+            pattern = f"%{search}%"
+            query = query.filter(
+                db.or_(
+                    Student.name.ilike(pattern),
+                    Student.registration_no.ilike(pattern)
+                )
+            )
+        
+        return query.scalar() or 0
     
     @staticmethod
     @cached('all_courses', ttl=300)  # Cache for 5 minutes

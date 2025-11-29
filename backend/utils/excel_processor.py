@@ -201,8 +201,17 @@ class ExcelProcessor:
             print(f"Error processing dataframe: {e}")
             return None
     
-    def save_to_database(self, processed_data, max_retries=2):
-        """Save the processed data to database with bulk operations and retry logic"""
+        def save_to_database(self, processed_data, max_retries=2):
+                """Save the processed data to database with bulk operations and retry logic.
+                Returns a dict with metrics on success: {
+                    'success': True,
+                    'metrics': {
+                         'courses_new', 'courses_existing', 'students_new', 'students_existing',
+                         'total_in_file', 'inserted', 'skipped_min_periods', 'skipped_duplicate',
+                         'processing_time_ms'
+                    }
+                }
+                """
         if not processed_data:
             return False
         
@@ -223,10 +232,13 @@ class ExcelProcessor:
                         info = next(v for v in processed_data['courses'].values() if v['code'] == c)
                         new_courses.append(Course(course_code=info['code'], course_name=info['name']))
                 if new_courses:
-                    db.session.add_all(new_courses)
-                    db.session.flush()  # Assign IDs
-                    for c in new_courses:
-                        course_map[c.course_code] = c
+                    # Bulk insert new courses for performance
+                    course_dicts = [{'course_code': c.course_code, 'course_name': c.course_name} for c in new_courses]
+                    db.session.bulk_insert_mappings(Course, course_dicts)
+                    db.session.flush()
+                    # Refresh course_map by querying inserted + existing
+                    existing_courses = Course.query.filter(Course.course_code.in_(incoming_course_codes)).all()
+                    course_map = {c.course_code: c for c in existing_courses}
                 
                 # ------------------------------
                 # 2. Prefetch existing students
@@ -240,25 +252,57 @@ class ExcelProcessor:
                     if reg and reg not in student_map:
                         new_students.append(Student(admission_no=s['admission_no'], registration_no=reg, name=s['name']))
                 if new_students:
-                    db.session.add_all(new_students)
+                    # Bulk insert new students for performance
+                    student_dicts = [{'admission_no': s.admission_no, 'registration_no': s.registration_no, 'name': s.name} for s in new_students]
+                    db.session.bulk_insert_mappings(Student, student_dicts)
                     db.session.flush()
-                    for s in new_students:
-                        student_map[s.registration_no] = s
+                    # Refresh student_map by querying inserted + existing
+                    existing_students = Student.query.filter(Student.registration_no.in_(incoming_reg_nos)).all()
+                    student_map = {s.registration_no: s for s in existing_students}
                 
                 # Commit base entities (courses & students) to ensure IDs are persistent
-                db.session.commit()
+                # Note: Using flush() instead of commit() to keep transaction open
+                db.session.flush()
                 
                 # ------------------------------
-                # 3. Prepare attendance data (filter & group)
+                # 3. Filter attendance data by minimum conducted periods
                 # ------------------------------
-                filtered_attendance = [a for a in processed_data['attendance'] if a['conducted_periods'] >= 5]
+                MIN_CONDUCTED_PERIODS = 5
+                total_attendance_records = len(processed_data['attendance'])
+                filtered_attendance = []
+                skipped_min_periods = 0
+                
+                for a in processed_data['attendance']:
+                    if a['conducted_periods'] >= MIN_CONDUCTED_PERIODS:
+                        filtered_attendance.append(a)
+                    else:
+                        skipped_min_periods += 1
+                
                 if not filtered_attendance:
                     from backend.services.attendance_service import invalidate_cache
                     invalidate_cache()
-                    print("No attendance records meet minimum conducted periods; nothing to insert.")
-                    return True
+                    elapsed = (time.perf_counter() - start_time) * 1000
+                    print(f"⚠ No attendance records meet minimum {MIN_CONDUCTED_PERIODS} conducted periods.")
+                    print(f"  Total records: {total_attendance_records}, Skipped (< {MIN_CONDUCTED_PERIODS} classes): {skipped_min_periods}")
+                    return {
+                        'success': True,
+                        'metrics': {
+                            'courses_new': len(new_courses),
+                            'courses_existing': len(course_map) - len(new_courses),
+                            'students_new': len(new_students),
+                            'students_existing': len(student_map) - len(new_students),
+                            'total_in_file': total_attendance_records,
+                            'inserted': 0,
+                            'skipped_min_periods': skipped_min_periods,
+                            'skipped_duplicate': 0,
+                            'processing_time_ms': round(elapsed, 2)
+                        }
+                    }
                 
-                # Build (student_id, course_id) pairs for existing lookup
+                # ------------------------------
+                # 4. Bulk fetch existing attendance records to detect duplicates
+                # ------------------------------
+                from sqlalchemy import tuple_
                 pairs = []
                 for a in filtered_attendance:
                     student = student_map.get(a['registration_no'])
@@ -266,51 +310,48 @@ class ExcelProcessor:
                     if student and course:
                         pairs.append((student.id, course.id))
                 
-                # ------------------------------
-                # 4. Bulk fetch existing attendance records
-                # ------------------------------
-                from sqlalchemy import tuple_
-                existing_attendance_records = []
+                attendance_map = set()
                 if pairs:
-                    existing_attendance_records = db.session.query(AttendanceRecord).filter(
+                    rows = db.session.query(
+                        AttendanceRecord.student_id,
+                        AttendanceRecord.course_id
+                    ).filter(
                         tuple_(AttendanceRecord.student_id, AttendanceRecord.course_id).in_(pairs)
                     ).all()
-                attendance_map = {(r.student_id, r.course_id): r for r in existing_attendance_records}
-                
+                    attendance_map = {(r[0], r[1]) for r in rows}
+
                 # ------------------------------
-                # 5. Apply updates & collect new records
+                # 5. Prepare bulk insert mappings (skip existing records)
                 # ------------------------------
-                new_records = []
-                update_count = 0
-                skip_count = 0
+                insert_mappings = []
+                skipped_duplicate = 0
+
                 for a in filtered_attendance:
                     student = student_map.get(a['registration_no'])
                     course = course_map.get(a['course_code'])
                     if not student or not course:
                         continue
+                    
                     key = (student.id, course.id)
-                    existing = attendance_map.get(key)
-                    if existing:
-                        if a['conducted_periods'] > existing.conducted_periods:
-                            existing.attended_periods = a['attended_periods']
-                            existing.conducted_periods = a['conducted_periods']
-                            existing.attendance_percentage = a['attendance_percentage']
-                            update_count += 1
-                        else:
-                            skip_count += 1
+                    if key in attendance_map:
+                        # Already exists, skip to avoid duplicates
+                        skipped_duplicate += 1
                     else:
-                        new_records.append(AttendanceRecord(
-                            student_id=student.id,
-                            course_id=course.id,
-                            attended_periods=a['attended_periods'],
-                            conducted_periods=a['conducted_periods'],
-                            attendance_percentage=a['attendance_percentage']
-                        ))
+                        insert_mappings.append({
+                            'student_id': student.id,
+                            'course_id': course.id,
+                            'attended_periods': a['attended_periods'],
+                            'conducted_periods': a['conducted_periods'],
+                            'attendance_percentage': a['attendance_percentage']
+                        })
+
+                # Bulk insert new attendance records
+                if insert_mappings:
+                    db.session.bulk_insert_mappings(AttendanceRecord, insert_mappings)
                 
-                if new_records:
-                    db.session.add_all(new_records)
-                
-                db.session.commit()
+                # Don't commit here - let the caller control the transaction
+                # db.session.commit()
+                db.session.flush()
                 
                 # Invalidate cache after successful data import
                 from backend.services.attendance_service import invalidate_cache
@@ -320,14 +361,31 @@ class ExcelProcessor:
                 print(f"✓ Upload completed successfully!")
                 print(f"  Courses: {len(new_courses)} new, {len(course_map)-len(new_courses)} existing")
                 print(f"  Students: {len(new_students)} new, {len(student_map)-len(new_students)} existing")
-                print(f"  Attendance: {len(new_records)} new, {update_count} updated, {skip_count} skipped")
+                print(f"  Attendance records:")
+                print(f"    • Total in file: {total_attendance_records}")
+                print(f"    • Inserted: {len(insert_mappings)}")
+                print(f"    • Skipped (< {MIN_CONDUCTED_PERIODS} classes): {skipped_min_periods}")
+                print(f"    • Skipped (duplicate): {skipped_duplicate}")
                 print(f"  Processing time: {elapsed:.2f} ms ({elapsed/1000:.2f}s)")
-                return True
+                return {
+                    'success': True,
+                    'metrics': {
+                        'courses_new': len(new_courses),
+                        'courses_existing': len(course_map) - len(new_courses),
+                        'students_new': len(new_students),
+                        'students_existing': len(student_map) - len(new_students),
+                        'total_in_file': total_attendance_records,
+                        'inserted': len(insert_mappings),
+                        'skipped_min_periods': skipped_min_periods,
+                        'skipped_duplicate': skipped_duplicate,
+                        'processing_time_ms': round(elapsed, 2)
+                    }
+                }
             except OperationalError as e:
                 if attempt == max_retries - 1:
                     db.session.rollback()
                     print(f"✗ Upload failed after {max_retries} attempts (OperationalError): {e}")
-                    return False
+                    return {'success': False, 'error': str(e)}
                 # Retry after disposing engine
                 print(f"⚠ Connection error on attempt {attempt + 1}, retrying...")
                 db.session.rollback()
@@ -337,8 +395,204 @@ class ExcelProcessor:
                 db.session.rollback()
                 elapsed = (time.perf_counter() - start_time) * 1000
                 print(f"✗ Upload failed after {elapsed:.2f} ms: {e}")
-                return False
+                return {'success': False, 'error': str(e)}
     
+    def save_to_database(self, processed_data, max_retries=2):
+        """Save the processed data to database with bulk operations and retry logic.
+        Returns a dict with metrics on success: {
+            'success': True,
+            'metrics': {
+                 'courses_new', 'courses_existing', 'students_new', 'students_existing',
+                 'total_in_file', 'inserted', 'skipped_min_periods', 'skipped_duplicate',
+                 'processing_time_ms'
+            }
+        }
+        """
+        if not processed_data:
+            return False
+
+        from sqlalchemy.exc import OperationalError
+
+        for attempt in range(max_retries):
+            start_time = time.perf_counter()
+            try:
+                # ------------------------------
+                # 1. Prefetch existing courses
+                # ------------------------------
+                incoming_course_codes = {c['code'] for c in processed_data['courses'].values()} if processed_data.get('courses') else set()
+                existing_courses = Course.query.filter(Course.course_code.in_(incoming_course_codes)).all() if incoming_course_codes else []
+                course_map = {c.course_code: c for c in existing_courses}
+                new_courses = []
+                for c in incoming_course_codes:
+                    if c not in course_map:
+                        info = next(v for v in processed_data['courses'].values() if v['code'] == c)
+                        new_courses.append(Course(course_code=info['code'], course_name=info['name']))
+                if new_courses:
+                    # Bulk insert new courses for performance
+                    course_dicts = [{'course_code': c.course_code, 'course_name': c.course_name} for c in new_courses]
+                    db.session.bulk_insert_mappings(Course, course_dicts)
+                    db.session.flush()
+                    # Refresh course_map by querying inserted + existing
+                    existing_courses = Course.query.filter(Course.course_code.in_(incoming_course_codes)).all()
+                    course_map = {c.course_code: c for c in existing_courses}
+
+                # ------------------------------
+                # 2. Prefetch existing students
+                # ------------------------------
+                incoming_reg_nos = {s['registration_no'] for s in processed_data['students'] if s['registration_no']}
+                existing_students = Student.query.filter(Student.registration_no.in_(incoming_reg_nos)).all() if incoming_reg_nos else []
+                student_map = {s.registration_no: s for s in existing_students}
+                new_students = []
+                for s in processed_data['students']:
+                    reg = s['registration_no']
+                    if reg and reg not in student_map:
+                        new_students.append(Student(admission_no=s['admission_no'], registration_no=reg, name=s['name']))
+                if new_students:
+                    # Bulk insert new students for performance
+                    student_dicts = [{'admission_no': s.admission_no, 'registration_no': s.registration_no, 'name': s.name} for s in new_students]
+                    db.session.bulk_insert_mappings(Student, student_dicts)
+                    db.session.flush()
+                    # Refresh student_map by querying inserted + existing
+                    existing_students = Student.query.filter(Student.registration_no.in_(incoming_reg_nos)).all()
+                    student_map = {s.registration_no: s for s in existing_students}
+
+                # Commit base entities (courses & students) to ensure IDs are persistent
+                # Note: Using flush() instead of commit() to keep transaction open
+                db.session.flush()
+
+                # ------------------------------
+                # 3. Filter attendance data by minimum conducted periods
+                # ------------------------------
+                MIN_CONDUCTED_PERIODS = 5
+                total_attendance_records = len(processed_data['attendance'])
+                filtered_attendance = []
+                skipped_min_periods = 0
+
+                for a in processed_data['attendance']:
+                    if a['conducted_periods'] >= MIN_CONDUCTED_PERIODS:
+                        filtered_attendance.append(a)
+                    else:
+                        skipped_min_periods += 1
+
+                if not filtered_attendance:
+                    from backend.services.attendance_service import invalidate_cache
+                    invalidate_cache()
+                    elapsed = (time.perf_counter() - start_time) * 1000
+                    print(f"⚠ No attendance records meet minimum {MIN_CONDUCTED_PERIODS} conducted periods.")
+                    print(f"  Total records: {total_attendance_records}, Skipped (< {MIN_CONDUCTED_PERIODS} classes): {skipped_min_periods}")
+                    return {
+                        'success': True,
+                        'metrics': {
+                            'courses_new': len(new_courses),
+                            'courses_existing': len(course_map) - len(new_courses),
+                            'students_new': len(new_students),
+                            'students_existing': len(student_map) - len(new_students),
+                            'total_in_file': total_attendance_records,
+                            'inserted': 0,
+                            'skipped_min_periods': skipped_min_periods,
+                            'skipped_duplicate': 0,
+                            'processing_time_ms': round(elapsed, 2)
+                        }
+                    }
+
+                # ------------------------------
+                # 4. Bulk fetch existing attendance records to detect duplicates
+                # ------------------------------
+                from sqlalchemy import tuple_
+                pairs = []
+                for a in filtered_attendance:
+                    student = student_map.get(a['registration_no'])
+                    course = course_map.get(a['course_code'])
+                    if student and course:
+                        pairs.append((student.id, course.id))
+
+                attendance_map = set()
+                if pairs:
+                    rows = db.session.query(
+                        AttendanceRecord.student_id,
+                        AttendanceRecord.course_id
+                    ).filter(
+                        tuple_(AttendanceRecord.student_id, AttendanceRecord.course_id).in_(pairs)
+                    ).all()
+                    attendance_map = {(r[0], r[1]) for r in rows}
+
+                # ------------------------------
+                # 5. Prepare bulk insert mappings (skip existing records)
+                # ------------------------------
+                insert_mappings = []
+                skipped_duplicate = 0
+
+                for a in filtered_attendance:
+                    student = student_map.get(a['registration_no'])
+                    course = course_map.get(a['course_code'])
+                    if not student or not course:
+                        continue
+
+                    key = (student.id, course.id)
+                    if key in attendance_map:
+                        # Already exists, skip to avoid duplicates
+                        skipped_duplicate += 1
+                    else:
+                        insert_mappings.append({
+                            'student_id': student.id,
+                            'course_id': course.id,
+                            'attended_periods': a['attended_periods'],
+                            'conducted_periods': a['conducted_periods'],
+                            'attendance_percentage': a['attendance_percentage']
+                        })
+
+                # Bulk insert new attendance records
+                if insert_mappings:
+                    db.session.bulk_insert_mappings(AttendanceRecord, insert_mappings)
+
+                # Don't commit here - let the caller control the transaction
+                # db.session.commit()
+                db.session.flush()
+
+                # Invalidate cache after successful data import
+                from backend.services.attendance_service import invalidate_cache
+                invalidate_cache()
+
+                elapsed = (time.perf_counter() - start_time) * 1000
+                print(f"✓ Upload completed successfully!")
+                print(f"  Courses: {len(new_courses)} new, {len(course_map)-len(new_courses)} existing")
+                print(f"  Students: {len(new_students)} new, {len(student_map)-len(new_students)} existing")
+                print(f"  Attendance records:")
+                print(f"    • Total in file: {total_attendance_records}")
+                print(f"    • Inserted: {len(insert_mappings)}")
+                print(f"    • Skipped (< {MIN_CONDUCTED_PERIODS} classes): {skipped_min_periods}")
+                print(f"    • Skipped (duplicate): {skipped_duplicate}")
+                print(f"  Processing time: {elapsed:.2f} ms ({elapsed/1000:.2f}s)")
+                return {
+                    'success': True,
+                    'metrics': {
+                        'courses_new': len(new_courses),
+                        'courses_existing': len(course_map) - len(new_courses),
+                        'students_new': len(new_students),
+                        'students_existing': len(student_map) - len(new_students),
+                        'total_in_file': total_attendance_records,
+                        'inserted': len(insert_mappings),
+                        'skipped_min_periods': skipped_min_periods,
+                        'skipped_duplicate': skipped_duplicate,
+                        'processing_time_ms': round(elapsed, 2)
+                    }
+                }
+            except OperationalError as e:
+                if attempt == max_retries - 1:
+                    db.session.rollback()
+                    print(f"✗ Upload failed after {max_retries} attempts (OperationalError): {e}")
+                    return {'success': False, 'error': str(e)}
+                # Retry after disposing engine
+                print(f"⚠ Connection error on attempt {attempt + 1}, retrying...")
+                db.session.rollback()
+                db.engine.dispose()
+                time.sleep(0.5)
+            except Exception as e:
+                db.session.rollback()
+                elapsed = (time.perf_counter() - start_time) * 1000
+                print(f"✗ Upload failed after {elapsed:.2f} ms: {e}")
+                return {'success': False, 'error': str(e)}
+
     def cleanup_insufficient_records(self, min_conducted_periods=5):
         """Remove existing records that don't meet minimum conducted periods requirement"""
         try:

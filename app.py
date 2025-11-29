@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from flask import Flask, request, redirect, jsonify
+import time
 from flask_cors import CORS
 
 # Import our modules
@@ -94,11 +95,11 @@ def upload_page():
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload_file():
-    """Handle upload page display and multiple file upload processing"""
+    """Handle file upload processing (linear processing - one file at a time)"""
     if request.method == 'GET':
         return redirect(f"{Config.FRONTEND_URL}/upload")
     
-    # Handle POST request (multiple file upload)
+    # Handle POST request (file upload)
     if 'files' not in request.files:
         return jsonify({ 'success': False, 'error': 'No files selected' }), 400
     
@@ -111,9 +112,11 @@ def upload_file():
 
     processed_files = 0
     errors = []
+    file_logs = []  # per-file timings for browser console
+    total_start = time.perf_counter()
     
+    # Process files linearly (typically one file per request from frontend)
     try:
-        # Process each file directly from memory
         for file in files:
             if not file or not allowed_file(file.filename):
                 errors.append(f"Invalid file type: {file.filename}")
@@ -121,19 +124,51 @@ def upload_file():
             
             # Process the file based on its type
             if file.filename.lower().endswith(('.xlsx', '.xls', '.csv')):
+                print(f"➡️  Starting processing for file: {file.filename}")
+                file_start = time.perf_counter()
                 success = process_excel_file_from_memory(file)
-                if success:
+                if isinstance(success, dict):
+                    success_flag = bool(success.get('success', False))
+                else:
+                    success_flag = bool(success)
+                if success_flag:
                     processed_files += 1
+                    # Commit after each file for linear processing
+                    db.session.commit()
+                    file_elapsed = (time.perf_counter() - file_start) * 1000
+                    metrics = success.get('metrics') if isinstance(success, dict) else None
+                    file_log = {
+                        'name': file.filename,
+                        'elapsed_ms': round(file_elapsed, 2)
+                    }
+                    if metrics:
+                        file_log.update({
+                            'courses_new': metrics.get('courses_new'),
+                            'courses_existing': metrics.get('courses_existing'),
+                            'students_new': metrics.get('students_new'),
+                            'students_existing': metrics.get('students_existing'),
+                            'total_in_file': metrics.get('total_in_file'),
+                            'inserted': metrics.get('inserted'),
+                            'skipped_min_periods': metrics.get('skipped_min_periods'),
+                            'skipped_duplicate': metrics.get('skipped_duplicate'),
+                            'server_processing_ms': metrics.get('processing_time_ms')
+                        })
+                    file_logs.append(file_log)
+                    print(f"✅ Finished processing {file.filename} in {file_elapsed:.2f} ms")
                 else:
                     errors.append(f"Failed to process: {file.filename}")
+                    db.session.rollback()
+                    return jsonify({ 'success': False, 'error': f"Failed to process: {file.filename}" }), 500
             else:
                 errors.append(f"Unsupported file format: {file.filename}")
         
         if processed_files > 0:
+            total_elapsed = (time.perf_counter() - total_start) * 1000
+            print(f"⏱️  Total processing time for this upload: {total_elapsed:.2f} ms")
             message = f"Successfully processed {processed_files} file(s)."
             if errors:
                 message += f" {len(errors)} file(s) had errors."
-            return jsonify({ 'success': True, 'message': message })
+            return jsonify({ 'success': True, 'message': message, 'files': file_logs, 'total_elapsed_ms': round(total_elapsed, 2) })
         else:
             error_msg = "No files were processed successfully."
             if errors:
@@ -141,8 +176,9 @@ def upload_file():
             return jsonify({ 'success': False, 'error': error_msg }), 500
             
     except Exception as e:
+        db.session.rollback()
         app.logger.error(f"Error processing uploads: {e}")
-        return jsonify({ 'success': False, 'error': 'An error occurred while processing the files.' }), 500
+        return jsonify({ 'success': False, 'error': 'An error occurred while processing the file.' }), 500
 
 def process_excel_file_from_memory(file):
     """Process Excel file directly from memory and save to database"""
@@ -170,17 +206,43 @@ def api_attendance():
     # Parse excluded courses (comma-separated)
     exclude_courses = [c.strip() for c in exclude_courses_str.split(',') if c.strip()] if exclude_courses_str else None
     
-    # Get filtered records
+    # Pagination support
+    try:
+        page = int(request.args.get('page', 1))
+    except ValueError:
+        page = 1
+    try:
+        per_page = int(request.args.get('per_page', 100))
+    except ValueError:
+        per_page = 100
+
+    # Get filtered records (with pagination)
     records = attendance_service.get_filtered_attendance_records(
-        course_code=course_code, 
-        threshold=threshold, 
+        course_code=course_code,
+        threshold=threshold,
+        search=search,
+        exclude_courses=exclude_courses,
+        page=page,
+        per_page=per_page
+    )
+    
+    # Get total count for pagination
+    total_count = attendance_service.get_filtered_attendance_count(
+        course_code=course_code,
+        threshold=threshold,
         search=search,
         exclude_courses=exclude_courses
     )
     
-    # Format for JSON response
+    # Format for JSON response with pagination info
     data = attendance_service.format_attendance_data_for_export(records)
-    return jsonify(data)
+    return jsonify({
+        'records': data,
+        'total': total_count,
+        'page': page,
+        'per_page': per_page,
+        'total_pages': (total_count + per_page - 1) // per_page if per_page > 0 else 0
+    })
 
 @app.route('/api/stats')
 def api_stats():
@@ -229,14 +291,18 @@ def export_excel():
             course_code=course_code,
             threshold=101,  # Use a value above 100 to skip filter
             search=search,
-            exclude_courses=exclude_courses
+            exclude_courses=exclude_courses,
+            page=1,
+            per_page=None
         )
     else:
         records = attendance_service.get_filtered_attendance_records(
             course_code=course_code,
             threshold=threshold,
             search=search,
-            exclude_courses=exclude_courses
+            exclude_courses=exclude_courses,
+            page=1,
+            per_page=None
         )
 
 
@@ -271,14 +337,18 @@ def export_pdf():
             course_code=course_code,
             threshold=101,
             search=search,
-            exclude_courses=exclude_courses
+            exclude_courses=exclude_courses,
+            page=1,
+            per_page=None
         )
     else:
         records = attendance_service.get_filtered_attendance_records(
             course_code=course_code,
             threshold=threshold,
             search=search,
-            exclude_courses=exclude_courses
+            exclude_courses=exclude_courses,
+            page=1,
+            per_page=None
         )
 
 

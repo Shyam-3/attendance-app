@@ -48,16 +48,43 @@ export default function Dashboard() {
   const [thresholdDropdownFixed, setThresholdDropdownFixed] = useState(false);
   const [courseJustSelected, setCourseJustSelected] = useState(false);
   const [thresholdJustSelected, setThresholdJustSelected] = useState(false);
+  const [perPageDropdownOpen, setPerPageDropdownOpen] = useState(false);
+  const [perPageDropdownFixed, setPerPageDropdownFixed] = useState(false);
+  const [perPageJustSelected, setPerPageJustSelected] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [perPage, setPerPage] = useState(100);
+  const [totalRecords, setTotalRecords] = useState(0);
   const courseDropdownRef = useRef(null);
   const excludeDropdownRef = useRef(null);
   const thresholdDropdownRef = useRef(null);
+  const perPageDropdownRef = useRef(null);
 
-  // Real-time filtering: reload when filters change
+  // Real-time filtering (excluding perPage): reset to page 1 and refresh filtered stats
   useEffect(() => {
-    load();
+    setCurrentPage(1);
     loadFilteredStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [course, threshold, search, excludeCourses]);
+
+  // When perPage changes, clamp currentPage to valid range and reload if page unchanged
+  useEffect(() => {
+    const newTotalPages = Math.max(1, Math.ceil(totalRecords / Math.max(1, perPage)));
+    setCurrentPage(prev => {
+      const next = Math.min(prev, newTotalPages);
+      if (next === prev) {
+        // page unchanged but perPage changed → reload data explicitly
+        load();
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perPage, totalRecords]);
+
+  // Load data when page changes
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage]);
 
   useEffect(() => {
     // initial load
@@ -85,17 +112,36 @@ export default function Dashboard() {
         setThresholdDropdownOpen(false);
         setThresholdDropdownFixed(false);
       }
+      if (
+        perPageDropdownFixed && perPageDropdownRef.current && !(perPageDropdownRef.current as any).contains(event.target)
+      ) {
+        setPerPageDropdownOpen(false);
+        setPerPageDropdownFixed(false);
+      }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [courseDropdownFixed, excludeDropdownFixed, thresholdDropdownFixed]);
+  }, [courseDropdownFixed, excludeDropdownFixed, thresholdDropdownFixed, perPageDropdownFixed]);
 
   async function load() {
     try {
-      const data = await fetchAttendance({ course, threshold, search, exclude_courses: excludeCourses });
-      setRows(data);
+      const data = await fetchAttendance({ course, threshold, search, exclude_courses: excludeCourses, page: currentPage, per_page: perPage });
+      
+      // Handle both paginated and non-paginated responses
+      if (data.records) {
+        // Paginated response
+        setRows(data.records);
+        setTotalRecords(data.total || 0);
+        console.log(`Loaded page ${data.page} of ${data.total_pages}, showing ${data.records.length} records out of ${data.total} total`);
+      } else {
+        // Non-paginated response (fallback for compatibility)
+        setRows(Array.isArray(data) ? data : []);
+        setTotalRecords(Array.isArray(data) ? data.length : 0);
+      }
     } catch (e) {
-      console.error(e);
+      console.error('Error loading attendance data:', e);
+      setRows([]);
+      setTotalRecords(0);
     }
   }
 
@@ -129,6 +175,16 @@ export default function Dashboard() {
     if (selectedCourse) {
       setExcludeCourses([]);
     }
+  }
+
+  function handlePerPageChange(value: number) {
+    setPerPage(value);
+    setPerPageJustSelected(true);
+    setPerPageDropdownFixed(false);
+    setPerPageDropdownOpen(false);
+    setTimeout(() => {
+      setPerPageJustSelected(false);
+    }, 300);
   }
 
   async function onDelete(recordId?: number) {
@@ -297,8 +353,9 @@ export default function Dashboard() {
         {/* Filters Section */}
         <div className="filter-section">
           <h5 className="mb-3"><i className="fas fa-filter me-2"></i>Filters</h5>
-          <div className="row mb-4">
-            <div className="col-md-3">
+          {/* First Row: Course, Threshold, Search */}
+          <div className="row mb-3">
+            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
               <label className="form-label">Course</label>
               <div
                 className="dropdown"
@@ -372,68 +429,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="col-md-3">
-              <label className="form-label">Exclude Courses</label>
-              <div
-                className="dropdown"
-                ref={excludeDropdownRef}
-                onMouseEnter={() => !excludeDropdownFixed && !course && setExcludeDropdownOpen(true)}
-                onMouseLeave={() => !excludeDropdownFixed && setExcludeDropdownOpen(false)}
-                onClick={() => {
-                  if (!course) {
-                    setExcludeDropdownOpen(true);
-                    setExcludeDropdownFixed(f => !f);
-                  }
-                }}
-                style={{ position: 'relative' }}
-              >
-                <button
-                  className="btn btn-outline-secondary dropdown-toggle w-100 text-start filter-dropdown-btn filter-dropdown-btn-custom"
-                  type="button"
-                  data-bs-toggle="dropdown"
-                  aria-expanded={excludeDropdownOpen}
-                  disabled={!!course}
-                >
-                  <span className="filter-dropdown-span">
-                    {excludeCourses.length === 0 ? 'None' : `${excludeCourses.length} excluded`}
-                  </span>
-                </button>
-                <div
-                  className={`dropdown-menu p-3 filter-dropdown-menu filter-dropdown-menu-custom${excludeDropdownOpen ? ' show' : ''}`}
-                >
-                  {courses.filter(c => c.code !== course).length === 0 ? (
-                    <div className="text-muted filter-dropdown-empty">No courses available</div>
-                  ) : (
-                    courses.filter(c => c.code !== course).map((c, index, array) => (
-                      <div
-                        key={c.code}
-                        className={`form-check filter-dropdown-check${index === array.length - 1 ? ' last' : ''}`}
-                      >
-                        <input
-                          className="form-check-input"
-                          type="checkbox"
-                          checked={excludeCourses.includes(c.code)}
-                          onChange={() => {
-                            if (excludeCourses.includes(c.code)) {
-                              setExcludeCourses(excludeCourses.filter(code => code !== c.code));
-                            } else {
-                              setExcludeCourses([...excludeCourses, c.code]);
-                            }
-                          }}
-                        />
-                        <label
-                          className="form-check-label filter-dropdown-label"
-                        >
-                          {c.code} - {c.name}
-                        </label>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="col-md-3">
+            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
               <label className="form-label">Threshold</label>
               <div
                 className="dropdown"
@@ -536,7 +532,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="col-md-2">
+            <div className="col-md-6 col-sm-12 mb-3 mb-md-0">
               <label className="form-label">Search Student</label>
               <div className="search-box">
                 <i className="fas fa-search"></i>
@@ -551,19 +547,139 @@ export default function Dashboard() {
                 />
               </div>
             </div>
+          </div>
 
-            <div className="col-md-1 d-flex align-items-end">
+          {/* Second Row: Exclude Courses, Entries Per Page, Clear Button */}
+          <div className="row mb-4">
+            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
+              <label className="form-label">Exclude Courses</label>
+              <div
+                className="dropdown"
+                ref={excludeDropdownRef}
+                onMouseEnter={() => !excludeDropdownFixed && !course && setExcludeDropdownOpen(true)}
+                onMouseLeave={() => !excludeDropdownFixed && setExcludeDropdownOpen(false)}
+                onClick={() => {
+                  if (!course) {
+                    setExcludeDropdownOpen(true);
+                    setExcludeDropdownFixed(f => !f);
+                  }
+                }}
+                style={{ position: 'relative' }}
+              >
+                <button
+                  className="btn btn-outline-secondary dropdown-toggle w-100 text-start filter-dropdown-btn filter-dropdown-btn-custom"
+                  type="button"
+                  data-bs-toggle="dropdown"
+                  aria-expanded={excludeDropdownOpen}
+                  disabled={!!course}
+                >
+                  <span className="filter-dropdown-span">
+                    {excludeCourses.length === 0 ? 'None' : `${excludeCourses.length} excluded`}
+                  </span>
+                </button>
+                <div
+                  className={`dropdown-menu p-3 filter-dropdown-menu filter-dropdown-menu-custom${excludeDropdownOpen ? ' show' : ''}`}
+                >
+                  {courses.filter(c => c.code !== course).length === 0 ? (
+                    <div className="text-muted filter-dropdown-empty">No courses available</div>
+                  ) : (
+                    courses.filter(c => c.code !== course).map((c, index, array) => (
+                      <div
+                        key={c.code}
+                        className={`form-check filter-dropdown-check${index === array.length - 1 ? ' last' : ''}`}
+                      >
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={excludeCourses.includes(c.code)}
+                          onChange={() => {
+                            if (excludeCourses.includes(c.code)) {
+                              setExcludeCourses(excludeCourses.filter(code => code !== c.code));
+                            } else {
+                              setExcludeCourses([...excludeCourses, c.code]);
+                            }
+                          }}
+                        />
+                        <label
+                          className="form-check-label filter-dropdown-label"
+                        >
+                          {c.code} - {c.name}
+                        </label>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="col-md-3 col-sm-6 mb-3 mb-md-0">
+              <label className="form-label">Entries Per Page</label>
+              <div
+                className="dropdown"
+                ref={perPageDropdownRef}
+                onMouseEnter={() => !perPageDropdownFixed && !perPageJustSelected && setPerPageDropdownOpen(true)}
+                onMouseLeave={() => !perPageDropdownFixed && !perPageJustSelected && setPerPageDropdownOpen(false)}
+                style={{ position: 'relative' }}
+              >
+                <button
+                  className="btn btn-outline-secondary dropdown-toggle w-100 text-start filter-dropdown-btn filter-dropdown-btn-custom"
+                  type="button"
+                  data-bs-toggle="dropdown"
+                  aria-expanded={perPageDropdownOpen}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPerPageDropdownOpen(true);
+                    setPerPageDropdownFixed(f => !f);
+                  }}
+                >
+                  <span className="filter-dropdown-span">
+                    {perPage} entries
+                  </span>
+                </button>
+                <div
+                  className={`dropdown-menu p-3 filter-dropdown-menu filter-dropdown-menu-custom${perPageDropdownOpen ? ' show' : ''}`}
+                >
+                  {[50, 100, 200].map((value, index) => (
+                    <div
+                      key={value}
+                      className={`form-check filter-dropdown-check${index === 2 ? ' last' : ''}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePerPageChange(value);
+                      }}
+                    >
+                      <input
+                        className="form-check-input"
+                        type="radio"
+                        name="perPageFilter"
+                        checked={perPage === value}
+                        onChange={() => {}}
+                      />
+                      <label
+                        className="form-check-label filter-dropdown-label"
+                      >
+                        {value} entries
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="col-md-6 col-sm-12 d-flex align-items-end">
               <button
-                className="btn btn-outline-secondary w-100"
+                className="btn btn-outline-secondary"
                 onClick={() => {
                   setCourse('');
                   setThreshold(75);
                   setSearch('');
                   setExcludeCourses([]);
+                  setPerPage(100);
+                  setCurrentPage(1);
                 }}
                 title="Clear all filters"
               >
-                Clear
+                <i className="fas fa-times me-2"></i>Clear Filters
               </button>
             </div>
           </div>
@@ -627,7 +743,7 @@ export default function Dashboard() {
                     const rowClass = pct < 65 ? 'critical-attendance' : pct < 75 ? 'low-attendance' : '';
                     return (
                       <tr key={idx} className={`attendance-row ${rowClass}`}>
-                        <td>{idx + 1}</td>
+                        <td>{(currentPage - 1) * perPage + idx + 1}</td>
                         <td>{r['Registration No']}</td>
                         <td>{r['Student Name']}</td>
                         <td>
@@ -660,6 +776,131 @@ export default function Dashboard() {
                   })}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {rows.length > 0 && totalRecords > 0 && (
+          <div className="row mt-4 mb-3">
+            <div className="col-12">
+              <nav aria-label="Page navigation">
+                <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
+                  <div className="text-muted small">
+                    <strong>Showing {((currentPage - 1) * perPage) + 1} to {Math.min(currentPage * perPage, totalRecords)} of {totalRecords} entries</strong>
+                    {(() => {
+                      const totalPages = Math.ceil(totalRecords / perPage);
+                      return totalPages > 1 ? (
+                        <span className="ms-2">
+                          (Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>)
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
+                  <ul className="pagination pagination-sm mb-0">
+                    <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                      <button 
+                        className="page-link" 
+                        onClick={() => setCurrentPage(1)}
+                        disabled={currentPage === 1}
+                        aria-label="First page"
+                      >
+                        <i className="fas fa-angle-double-left"></i>
+                      </button>
+                    </li>
+                    <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                      <button 
+                        className="page-link" 
+                        onClick={() => setCurrentPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        aria-label="Previous page"
+                      >
+                        <i className="fas fa-angle-left"></i>
+                      </button>
+                    </li>
+                    
+                    {(() => {
+                      const totalPages = Math.ceil(totalRecords / perPage);
+                      const pages = [];
+                      const maxVisible = 5;
+                      
+                      let startPage = Math.max(1, currentPage - Math.floor(maxVisible / 2));
+                      let endPage = Math.min(totalPages, startPage + maxVisible - 1);
+                      
+                      if (endPage - startPage < maxVisible - 1) {
+                        startPage = Math.max(1, endPage - maxVisible + 1);
+                      }
+                      
+                      if (startPage > 1) {
+                        pages.push(
+                          <li key="start-ellipsis" className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        );
+                      }
+                      
+                      for (let i = startPage; i <= endPage; i++) {
+                        pages.push(
+                          <li key={i} className={`page-item ${currentPage === i ? 'active' : ''}`}>
+                            <button 
+                              className="page-link" 
+                              onClick={() => setCurrentPage(i)}
+                            >
+                              {i}
+                            </button>
+                          </li>
+                        );
+                      }
+                      
+                      if (endPage < totalPages) {
+                        pages.push(
+                          <li key="end-ellipsis" className="page-item disabled">
+                            <span className="page-link">...</span>
+                          </li>
+                        );
+                      }
+                      
+                      return pages;
+                    })()}
+                    
+                    <li className={`page-item ${(() => {
+                      const totalPages = Math.ceil(totalRecords / perPage);
+                      return currentPage >= totalPages;
+                    })() ? 'disabled' : ''}`}>
+                      <button 
+                        className="page-link" 
+                        onClick={() => setCurrentPage(currentPage + 1)}
+                        disabled={(() => {
+                          const totalPages = Math.ceil(totalRecords / perPage);
+                          return currentPage >= totalPages;
+                        })()}
+                        aria-label="Next page"
+                      >
+                        <i className="fas fa-angle-right"></i>
+                      </button>
+                    </li>
+                    <li className={`page-item ${(() => {
+                      const totalPages = Math.ceil(totalRecords / perPage);
+                      return currentPage >= totalPages;
+                    })() ? 'disabled' : ''}`}>
+                      <button 
+                        className="page-link" 
+                        onClick={() => {
+                          const totalPages = Math.ceil(totalRecords / perPage);
+                          setCurrentPage(totalPages);
+                        }}
+                        disabled={(() => {
+                          const totalPages = Math.ceil(totalRecords / perPage);
+                          return currentPage >= totalPages;
+                        })()}
+                        aria-label="Last page"
+                      >
+                        <i className="fas fa-angle-double-right"></i>
+                      </button>
+                    </li>
+                  </ul>
+                </div>
+              </nav>
             </div>
           </div>
         )}

@@ -3,6 +3,8 @@ export interface AttendanceQuery {
   threshold?: number; // default 75
   search?: string;
   exclude_courses?: string[]; // array of course codes to exclude
+  page?: number; // for pagination
+  per_page?: number; // entries per page
 }
 
 // Compute API base: prefer env var; otherwise use production fallback when not on localhost
@@ -32,6 +34,8 @@ export async function fetchAttendance(params: AttendanceQuery = {}) {
   if (params.exclude_courses && params.exclude_courses.length > 0) {
     search.set('exclude_courses', params.exclude_courses.join(','));
   }
+  if (typeof params.page === 'number') search.set('page', String(params.page));
+  if (typeof params.per_page === 'number') search.set('per_page', String(params.per_page));
   const res = await fetch(`${API_BASE}/api/attendance?${search.toString()}`);
   if (!res.ok) throw new Error('Failed to fetch attendance');
   return res.json();
@@ -67,7 +71,13 @@ export async function uploadFiles(files: File[]) {
   files.forEach(f => form.append('files', f));
   const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: form });
   if (!res.ok) throw new Error('Upload failed');
-  return res.text();
+  // Prefer JSON payload for logs; fallback to text if not JSON
+  const contentType = res.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return res.json();
+  }
+  const text = await res.text();
+  return { success: true, message: text } as any;
 }
 
 export async function deleteRecord(id: number) {
