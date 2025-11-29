@@ -3,6 +3,7 @@ Configuration settings for the Attendance Management System
 """
 import os
 import socket
+import socket
 
 class Config:
     # Database configuration - PostgreSQL/Supabase only
@@ -58,6 +59,18 @@ class Config:
             'keepalives_count': 5
         }
     }
+
+    # Resolve DB host to IPv4 and set hostaddr to avoid IPv6 unreachable issues on some hosts (e.g., Railway)
+    try:
+        if '@' in DATABASE_URL:
+            host_port = DATABASE_URL.split('@')[1].split('/')[0]
+            host = host_port.split(':')[0]
+            addrs = socket.getaddrinfo(host, None, family=socket.AF_INET)
+            if addrs:
+                ipv4 = addrs[0][4][0]
+                SQLALCHEMY_ENGINE_OPTIONS['connect_args']['hostaddr'] = ipv4
+    except Exception:
+        pass
     
     # File upload configuration
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
