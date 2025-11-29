@@ -2,6 +2,7 @@
 Configuration settings for the Attendance Management System
 """
 import os
+import socket
 
 class Config:
     # Database configuration - PostgreSQL/Supabase only
@@ -22,6 +23,20 @@ class Config:
     if 'sslmode' not in DATABASE_URL:
         separator = '&' if '?' in DATABASE_URL else '?'
         DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
+
+    # Attempt to force IPv4 by adding hostaddr to the DSN to avoid IPv6-only resolution in some environments
+    try:
+        if '@' in DATABASE_URL:
+            host_port = DATABASE_URL.split('@')[1].split('/')[0]
+            host = host_port.split(':')[0]
+            addrs = socket.getaddrinfo(host, None, family=socket.AF_INET)
+            if addrs:
+                ipv4 = addrs[0][4][0]
+                separator = '&' if '?' in DATABASE_URL else '?'
+                DATABASE_URL = f"{DATABASE_URL}{separator}hostaddr={ipv4}"
+    except Exception:
+        # If resolution fails, proceed without hostaddr
+        pass
     
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
