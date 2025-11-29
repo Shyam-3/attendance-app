@@ -16,6 +16,40 @@ class Config:
     if DATABASE_URL.startswith('postgres://'):
         DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     
+    # Force IPv4 by replacing hostname with IPv4 address to avoid IPv6 unreachable issues on Railway
+    try:
+        if '@' in DATABASE_URL:
+            parts = DATABASE_URL.split('@')
+            host_and_rest = parts[1]
+            
+            # Extract host (before port or path)
+            if '/' in host_and_rest:
+                host_part, path_part = host_and_rest.split('/', 1)
+            else:
+                host_part = host_and_rest
+                path_part = ''
+            
+            # Extract port if present
+            if ':' in host_part:
+                host, port = host_part.rsplit(':', 1)
+            else:
+                host = host_part
+                port = None
+            
+            # Resolve to IPv4
+            addrs = socket.getaddrinfo(host, None, family=socket.AF_INET)
+            if addrs:
+                ipv4 = addrs[0][4][0]
+                
+                # Rebuild URL with IPv4
+                new_host_part = f"{ipv4}:{port}" if port else ipv4
+                new_host_and_rest = f"{new_host_part}/{path_part}" if path_part else new_host_part
+                DATABASE_URL = f"{parts[0]}@{new_host_and_rest}"
+    except Exception as e:
+        # If resolution fails, proceed with original URL
+        print(f"Warning: Could not resolve hostname to IPv4: {e}")
+        pass
+    
     # Add connection parameters for Windows compatibility and reliability
     if 'gssencmode' not in DATABASE_URL:
         separator = '&' if '?' in DATABASE_URL else '?'
@@ -24,20 +58,6 @@ class Config:
     if 'sslmode' not in DATABASE_URL:
         separator = '&' if '?' in DATABASE_URL else '?'
         DATABASE_URL = f"{DATABASE_URL}{separator}sslmode=require"
-
-    # Attempt to force IPv4 by adding hostaddr to the DSN to avoid IPv6-only resolution in some environments
-    try:
-        if '@' in DATABASE_URL:
-            host_port = DATABASE_URL.split('@')[1].split('/')[0]
-            host = host_port.split(':')[0]
-            addrs = socket.getaddrinfo(host, None, family=socket.AF_INET)
-            if addrs:
-                ipv4 = addrs[0][4][0]
-                separator = '&' if '?' in DATABASE_URL else '?'
-                DATABASE_URL = f"{DATABASE_URL}{separator}hostaddr={ipv4}"
-    except Exception:
-        # If resolution fails, proceed without hostaddr
-        pass
     
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
@@ -59,18 +79,6 @@ class Config:
             'keepalives_count': 5
         }
     }
-
-    # Resolve DB host to IPv4 and set hostaddr to avoid IPv6 unreachable issues on some hosts (e.g., Railway)
-    try:
-        if '@' in DATABASE_URL:
-            host_port = DATABASE_URL.split('@')[1].split('/')[0]
-            host = host_port.split(':')[0]
-            addrs = socket.getaddrinfo(host, None, family=socket.AF_INET)
-            if addrs:
-                ipv4 = addrs[0][4][0]
-                SQLALCHEMY_ENGINE_OPTIONS['connect_args']['hostaddr'] = ipv4
-    except Exception:
-        pass
     
     # File upload configuration
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
