@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Student {
+  id              Int      @id @default(autoincrement())
+  admission_no    String   @db.VarChar(50)
+  registration_no String   @unique @db.VarChar(50)
+  name            String   @db.VarChar(100)
+  created_at      DateTime @default(now()) @db.Timestamptz
+  attendance      AttendanceRecord[]
+
+  @@index([registration_no])
+  @@index([name])
+  @@map("students")
+}
+
+model Course {
+  id           Int      @id @default(autoincrement())
+  course_code  String   @unique @db.VarChar(20)
+  course_name  String   @db.VarChar(200)
+  created_at   DateTime @default(now()) @db.Timestamptz
+  attendance   AttendanceRecord[]
+
+  @@index([course_code])
+  @@map("courses")
+}
+
+model AttendanceRecord {
+  id                   Int      @id @default(autoincrement())
+  student_id           Int
+  course_id            Int
+  attended_periods     Int
+  conducted_periods    Int
+  attendance_percentage Float   @db.DoublePrecision
+  upload_date          DateTime @default(now()) @db.Timestamptz
+  student              Student  @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  course               Course   @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([student_id, course_id], name: "unique_student_course")
+  @@index([student_id])
+  @@index([course_id])
+  @@index([student_id, course_id, attendance_percentage], name: "idx_student_course_percentage")
+  @@map("attendance_records")
+}
