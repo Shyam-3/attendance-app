@@ -52,6 +52,19 @@ yarn-debug.log*
 .env.local
 .env.production
 
+# Firebase
+.firebase/
+.firebaserc.local
+firebase-debug.log
+firebase-debug.*.log
+functions/node_modules/
+functions/dist/
+functions/lib/
+functions/package-lock.json
+functions/prisma/
+uploads/
+instance/
+
 # Temporary files
 *.tmp
 *.bak
