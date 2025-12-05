@@ -78,15 +78,18 @@ export class ExportUtils {
     // Generate buffer
     const buffer = await workbook.xlsx.writeBuffer();
 
-    // Build filename
-    let filename = 'attendance.xlsx';
+    // Build descriptive filename based on filters (same as Python)
+    let filename = 'attendance';
     if (filterInfo && filterInfo.length > 0) {
       const filterStr = filterInfo
-        .join(' ')
-        .replace(/[:,'"|]/g, '')
-        .trim();
-      filename = `${filterStr}.xlsx`;
+        .map(f => String(f).replace(/:/g, '').replace(/,/g, '').replace(/\|/g, ''))
+        .join(', ');
+      filename = filterStr;
     }
+    filename = `${filename}.xlsx`;
+    
+    // Sanitize filename to prevent header issues
+    filename = filename.replace(/"/g, '').replace(/'/g, '');
 
     return { buffer: Buffer.from(buffer), filename };
   }
@@ -105,11 +108,22 @@ export class ExportUtils {
       doc.on('data', (chunk: Buffer) => chunks.push(chunk));
       doc.on('end', () => {
         const buffer = Buffer.concat(chunks);
-        let filename = 'attendance.pdf';
+        
+        // Build descriptive filename based on filters (same as Python)
+        let filename = 'attendance';
         if (filterInfo && filterInfo.length > 0) {
-          const filterStr = filterInfo.join(' ').replace(/[:,'"|]/g, '').trim();
-          filename = `${filterStr}.pdf`;
+          console.log(filterInfo+" <- filterInfo");
+          // const filterStr = filterInfo;
+          let filterStr = filterInfo;
+          //   .map(f => String(f).replace(/:/g, '').replace(/,/g, '').replace(/\|/g, ''))
+          //   .join(', ');
+          filename  = filename + filterStr;
         }
+        filename = `${filename}.pdf`;
+        console.log(filename+" <- filter");
+        // Sanitize filename to prevent header issues
+        // filename = filename.replace(/"/g, '').replace(/'/g, '');
+        
         resolve({ buffer, filename });
       });
       doc.on('error', reject);

@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 export interface AttendanceQuery {
   course?: string;
   threshold?: number; // default 75
@@ -11,7 +13,7 @@ export interface AttendanceQuery {
 const frontendHost = typeof window !== 'undefined' ? window.location.hostname : '';
 const isFrontendLocal = /^(localhost|127\.0\.0\.1)$/.test(frontendHost);
 const DEFAULT_LOCAL_API = 'http://127.0.0.1:5000';
-const DEFAULT_PROD_API = 'https://attendance-tracker-0zdg.onrender.com';
+const DEFAULT_PROD_API = 'https://attendance-app-3a47.onrender.com';
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? (isFrontendLocal ? DEFAULT_LOCAL_API : DEFAULT_PROD_API);
 
 // Warn in production if API base URL falls back to localhost
@@ -25,6 +27,20 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Helper to get auth headers
+async function getAuthHeaders(): Promise<HeadersInit> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+  
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  
+  return headers;
+}
+
 
 export async function fetchAttendance(params: AttendanceQuery = {}) {
   const search = new URLSearchParams();
@@ -36,13 +52,15 @@ export async function fetchAttendance(params: AttendanceQuery = {}) {
   }
   if (typeof params.page === 'number') search.set('page', String(params.page));
   if (typeof params.per_page === 'number') search.set('per_page', String(params.per_page));
-  const res = await fetch(`${API_BASE}/api/attendance?${search.toString()}`);
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE}/api/attendance?${search.toString()}`, { headers });
   if (!res.ok) throw new Error('Failed to fetch attendance');
   return res.json();
 }
 
 export async function fetchStats() {
-  const res = await fetch(`${API_BASE}/api/stats`);
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE}/api/stats`, { headers });
   if (!res.ok) throw new Error('Failed to fetch stats');
   return res.json();
 }
@@ -55,13 +73,15 @@ export async function fetchFilteredStats(params: AttendanceQuery = {}) {
   if (params.exclude_courses && params.exclude_courses.length > 0) {
     search.set('exclude_courses', params.exclude_courses.join(','));
   }
-  const res = await fetch(`${API_BASE}/api/filtered_stats?${search.toString()}`);
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE}/api/filtered_stats?${search.toString()}`, { headers });
   if (!res.ok) throw new Error('Failed to fetch filtered stats');
   return res.json();
 }
 
 export async function fetchCourses() {
-  const res = await fetch(`${API_BASE}/api/courses`);
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE}/api/courses`, { headers });
   if (!res.ok) throw new Error('Failed to fetch courses');
   return res.json() as Promise<Array<{ code: string; name: string }>>;
 }
@@ -69,7 +89,12 @@ export async function fetchCourses() {
 export async function uploadFiles(files: File[]) {
   const form = new FormData();
   files.forEach(f => form.append('files', f));
-  const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: form });
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers: HeadersInit = {};
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  const res = await fetch(`${API_BASE}/upload`, { method: 'POST', body: form, headers });
   if (!res.ok) throw new Error('Upload failed');
   // Prefer JSON payload for logs; fallback to text if not JSON
   const contentType = res.headers.get('content-type') || '';
@@ -81,35 +106,109 @@ export async function uploadFiles(files: File[]) {
 }
 
 export async function deleteRecord(id: number) {
-  const res = await fetch(`${API_BASE}/delete_record/${id}`, { method: 'DELETE' });
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE}/delete_record/${id}`, { method: 'DELETE', headers });
   if (!res.ok) throw new Error('Delete failed');
   return res.json();
 }
 
 export async function clearAllData() {
-  const res = await fetch(`${API_BASE}/clear_all_data`, { method: 'POST' });
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE}/clear_all_data`, { method: 'POST', headers });
   if (!res.ok) throw new Error('Clear failed');
   return res.json();
 }
 
-export function exportExcel(params: AttendanceQuery = {}) {
-  const search = new URLSearchParams();
-  if (params.course) search.set('course', params.course);
-  if (typeof params.threshold === 'number') search.set('threshold', String(params.threshold));
-  if (params.search) search.set('search', params.search);
-  if (params.exclude_courses && params.exclude_courses.length > 0) {
-    search.set('exclude_courses', params.exclude_courses.join(','));
+export async function exportExcel(params: AttendanceQuery = {}) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+    
+    const body: any = {};
+    if (params.course) body.course = params.course;
+    if (typeof params.threshold === 'number') body.threshold = params.threshold;
+    if (params.search) body.search = params.search;
+    if (params.exclude_courses && params.exclude_courses.length > 0) {
+      body.exclude_courses = params.exclude_courses.join(',');
+    }
+    
+    const res = await fetch(`${API_BASE}/export/excel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(body)
+    });
+    
+    if (!res.ok) throw new Error('Export failed');
+    
+    // Get filename from Content-Disposition header
+    const contentDisposition = res.headers.get('Content-Disposition');
+    let filename = 'attendance.xlsx';
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?(.+?)"?$/);
+      if (match) filename = match[1];
+    }
+    
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (err) {
+    console.error('Excel export error:', err);
+    throw err;
   }
-  window.location.href = `${API_BASE}/export/excel?${search.toString()}`;
 }
 
-export function exportPdf(params: AttendanceQuery = {}) {
-  const search = new URLSearchParams();
-  if (params.course) search.set('course', params.course);
-  if (typeof params.threshold === 'number') search.set('threshold', String(params.threshold));
-  if (params.search) search.set('search', params.search);
-  if (params.exclude_courses && params.exclude_courses.length > 0) {
-    search.set('exclude_courses', params.exclude_courses.join(','));
+export async function exportPdf(params: AttendanceQuery = {}) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) throw new Error('Not authenticated');
+    
+    const body: any = {};
+    if (params.course) body.course = params.course;
+    if (typeof params.threshold === 'number') body.threshold = params.threshold;
+    if (params.search) body.search = params.search;
+    if (params.exclude_courses && params.exclude_courses.length > 0) {
+      body.exclude_courses = params.exclude_courses.join(',');
+    }
+    
+    const res = await fetch(`${API_BASE}/export/pdf`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify(body)
+    });
+    
+    if (!res.ok) throw new Error('Export failed');
+    
+    // Get filename from Content-Disposition header
+    const contentDisposition = res.headers.get('Content-Disposition');
+    let filename = 'attendance.pdf';
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?(.+?)"?$/);
+      if (match) filename = match[1];
+    }
+    
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  } catch (err) {
+    console.error('PDF export error:', err);
+    throw err;
   }
-  window.location.href = `${API_BASE}/export/pdf?${search.toString()}`;
 }

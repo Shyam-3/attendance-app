@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import { useState } from 'react';
+import Navbar from '../components/Navbar';
 import { uploadFiles } from '../lib/api';
 
 interface UploadProgress {
@@ -219,23 +220,17 @@ export default function Upload() {
   }
 
   return (
-    <div className="bg-light min-vh-100">
-      <div className="container py-3 py-md-5">
-        <div className="row align-items-center mb-3 mb-md-4">
-          <div className="col-auto">
-            <a 
-              href="/" 
-              className={`btn btn-outline-primary btn-sm ${submitting ? 'disabled' : ''}`}
-              onClick={(e) => submitting && e.preventDefault()}
-            >
-              <i className="fas fa-arrow-left me-2"></i>Back to Dashboard
-            </a>
+    <>
+      <Navbar />
+      <div className="bg-light min-vh-100">
+        <div className="container py-3 py-md-5">
+          <div className="row align-items-center mb-3 mb-md-4">
+            <div className="col-auto" style={{width: '80px'}}></div>
+            <div className="col text-center">
+              <h2 className="mb-0 fs-4 fs-md-3">📊 Upload Attendance Data</h2>
+            </div>
+            <div className="col-auto" style={{width: '80px'}}></div>
           </div>
-          <div className="col text-center">
-            <h2 className="mb-0 fs-4 fs-md-3">📊 Upload Attendance Data</h2>
-          </div>
-          <div className="col-auto" style={{width: '80px'}}></div>
-        </div>
         
         <form onSubmit={onSubmit} className="card p-3 p-md-4 shadow-sm">
           <div className="mb-3">
@@ -386,7 +381,8 @@ export default function Upload() {
       </div>
       
       {/* Inline message replaces toast container */}
-    </div>
+      </div>
+    </>
   );
 }
 

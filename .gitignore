@@ -62,12 +62,17 @@ functions/dist/
 functions/lib/
 functions/package-lock.json
 functions/prisma/
-uploads/
-instance/
 
 # Temporary files
 *.tmp
 *.bak
+*.bat
+
+# Temporary Markdown files (keep README.md and DOCUMENTATION.md only)
+*.md
+!README.md
+!DOCUMENTATION.md
+!CLEANUP.md
 
 # Generated exports (optional - uncomment if you don't want to track exports)
 # *.pdf

@@ -2,8 +2,8 @@
  * ExcelProcessor - TypeScript port of backend/utils/excel_processor.py
  * Handles Excel/CSV file parsing and database operations with retry logic
  */
-import type { PrismaClient } from '@prisma/client';
 import ExcelJS from 'exceljs';
+import { query } from '../db';
 
 interface CourseInfo {
   code: string;
@@ -46,7 +46,7 @@ interface UploadMetrics {
 export class ExcelProcessor {
   private MIN_CONDUCTED_PERIODS = 5;
   
-  constructor(private prisma: PrismaClient) {}
+  constructor() {}
 
   /**
    * Extract course information from Excel header rows
@@ -268,7 +268,7 @@ export class ExcelProcessor {
   /**
    * Save processed data to database with bulk operations and retry logic
    */
-  async saveToDatabase(processedData: ProcessedData, maxRetries = 2): Promise<{ success: boolean; metrics?: UploadMetrics; error?: string }> {
+  async saveToDatabase(processedData: ProcessedData, userId: string, maxRetries = 2): Promise<{ success: boolean; metrics?: UploadMetrics; error?: string }> {
     if (!processedData) {
       return { success: false, error: 'No data to process' };
     }
@@ -277,59 +277,60 @@ export class ExcelProcessor {
       const startTime = performance.now();
       
       try {
-        // 1. Prefetch existing courses
-        // Deduplicate incoming course codes to avoid negative existing counts
+        // 1. Prefetch existing courses for this user
         const incomingCourseCodes = Array.from(new Set(Object.values(processedData.courses).map(c => c.code)));
-        const existingCourses = await this.prisma.course.findMany({
-          where: { course_code: { in: incomingCourseCodes } }
-        });
+        const existingCoursesResult = await query(
+          'SELECT id, course_code FROM courses WHERE user_id = $1 AND course_code = ANY($2)',
+          [userId, incomingCourseCodes]
+        );
         
-        const courseMap = new Map(existingCourses.map((c: any) => [c.course_code, c]));
+        const courseMap = new Map(existingCoursesResult.rows.map((c: any) => [c.course_code, c]));
         const newCourseCodes = incomingCourseCodes.filter(code => !courseMap.has(code));
         
         // Bulk insert new courses
         if (newCourseCodes.length > 0) {
           const coursesToCreate = newCourseCodes.map(code => {
             const info = Object.values(processedData.courses).find(c => c.code === code)!;
-            return { course_code: info.code, course_name: info.name };
+            return [userId, info.code, info.name];
           });
           
-          await this.prisma.course.createMany({ data: coursesToCreate, skipDuplicates: true });
+          const placeholders = coursesToCreate.map((_, i) => `($${i * 3 + 1},$${i * 3 + 2},$${i * 3 + 3})`).join(',');
+          const flatParams = coursesToCreate.flat();
           
-          // Refresh course map
-          const refreshedCourses = await this.prisma.course.findMany({
-            where: { course_code: { in: incomingCourseCodes } }
-          });
-          courseMap.clear();
-          refreshedCourses.forEach((c: any) => courseMap.set(c.course_code, c));
+          const createResult = await query(
+            `INSERT INTO courses (user_id, course_code, course_name) VALUES ${placeholders}
+             ON CONFLICT (user_id, course_code) DO NOTHING RETURNING id, course_code`,
+            flatParams
+          );
+          
+          // Add newly created courses to map
+          createResult.rows.forEach((c: any) => courseMap.set(c.course_code, c));
         }
 
-        // 2. Prefetch existing students
+        // 2. Prefetch existing students for this user
         const incomingRegNos = processedData.students.map(s => s.registration_no).filter(Boolean);
-        const existingStudents = await this.prisma.student.findMany({
-          where: { registration_no: { in: incomingRegNos } }
-        });
+        const existingStudentsResult = await query(
+          'SELECT id, registration_no FROM students WHERE user_id = $1 AND registration_no = ANY($2)',
+          [userId, incomingRegNos]
+        );
         
-        const studentMap = new Map(existingStudents.map((s: any) => [s.registration_no, s]));
+        const studentMap = new Map(existingStudentsResult.rows.map((s: any) => [s.registration_no, s]));
         const newStudents = processedData.students.filter(s => !studentMap.has(s.registration_no));
         
         // Bulk insert new students
         if (newStudents.length > 0) {
-          await this.prisma.student.createMany({
-            data: newStudents.map(s => ({
-              admission_no: s.admission_no,
-              registration_no: s.registration_no,
-              name: s.name
-            })),
-            skipDuplicates: true
-          });
+          const studentsToCreate = newStudents.map(s => [userId, s.admission_no, s.registration_no, s.name]);
+          const placeholders = studentsToCreate.map((_, i) => `($${i * 4 + 1},$${i * 4 + 2},$${i * 4 + 3},$${i * 4 + 4})`).join(',');
+          const flatParams = studentsToCreate.flat();
           
-          // Refresh student map
-          const refreshedStudents = await this.prisma.student.findMany({
-            where: { registration_no: { in: incomingRegNos } }
-          });
-          studentMap.clear();
-          refreshedStudents.forEach((s: any) => studentMap.set(s.registration_no, s));
+          const createResult = await query(
+            `INSERT INTO students (user_id, admission_no, registration_no, name) VALUES ${placeholders}
+             ON CONFLICT (user_id, registration_no) DO NOTHING RETURNING id, registration_no`,
+            flatParams
+          );
+          
+          // Add newly created students to map
+          createResult.rows.forEach((s: any) => studentMap.set(s.registration_no, s));
         }
 
         // 3. Filter attendance by minimum conducted periods
@@ -360,32 +361,45 @@ export class ExcelProcessor {
           };
         }
 
-        // 4. Bulk fetch existing attendance records
-        const pairs: Array<{ student_id: number; course_id: number }> = [];
-        filteredAttendance.forEach(a => {
-          const student = studentMap.get(a.registration_no) as any;
-          const course = courseMap.get(a.course_code) as any;
-          if (student && course) {
-            pairs.push({ student_id: student.id, course_id: course.id });
+        // 4. Fetch existing attendance records for this user
+        const pairs = filteredAttendance
+          .map(a => {
+            const student = studentMap.get(a.registration_no);
+            const course = courseMap.get(a.course_code);
+            if (student && course) return { student_id: student.id, course_id: course.id };
+            return null;
+          })
+          .filter((p): p is { student_id: number; course_id: number } => p !== null);
+
+        let attendanceSet = new Set<string>();
+        
+        if (pairs.length > 0) {
+          // Split into smaller batches to avoid query size issues
+          const batchSize = 100;
+          for (let i = 0; i < pairs.length; i += batchSize) {
+            const batch = pairs.slice(i, i + batchSize);
+            const studentIds = batch.map(p => p.student_id);
+            const courseIds = batch.map(p => p.course_id);
+            
+            const existingRecordsResult = await query(
+              `SELECT student_id, course_id FROM attendance_records 
+               WHERE user_id = $1 AND student_id = ANY($2) AND course_id = ANY($3)`,
+              [userId, studentIds, courseIds]
+            );
+            
+            existingRecordsResult.rows.forEach((r: any) => {
+              attendanceSet.add(`${r.student_id}-${r.course_id}`);
+            });
           }
-        });
-
-        const existingRecords = await this.prisma.attendanceRecord.findMany({
-          where: {
-            OR: pairs.map(p => ({ student_id: p.student_id, course_id: p.course_id }))
-          },
-          select: { student_id: true, course_id: true }
-        });
-
-        const attendanceSet = new Set(existingRecords.map((r: any) => `${r.student_id}-${r.course_id}`));
+        }
 
         // 5. Prepare bulk insert (skip duplicates)
         const toInsert: any[] = [];
         let skippedDuplicate = 0;
 
         filteredAttendance.forEach(a => {
-          const student = studentMap.get(a.registration_no) as any;
-          const course = courseMap.get(a.course_code) as any;
+          const student = studentMap.get(a.registration_no);
+          const course = courseMap.get(a.course_code);
           
           if (!student || !course) return;
           
@@ -393,19 +407,20 @@ export class ExcelProcessor {
           if (attendanceSet.has(key)) {
             skippedDuplicate++;
           } else {
-            toInsert.push({
-              student_id: student.id,
-              course_id: course.id,
-              attended_periods: a.attended_periods,
-              conducted_periods: a.conducted_periods,
-              attendance_percentage: a.attendance_percentage
-            });
+            toInsert.push([userId, student.id, course.id, a.attended_periods, a.conducted_periods, a.attendance_percentage]);
           }
         });
 
-        // Bulk insert
+        // Bulk insert attendance records
         if (toInsert.length > 0) {
-          await this.prisma.attendanceRecord.createMany({ data: toInsert });
+          const placeholders = toInsert.map((_, i) => `($${i * 6 + 1},$${i * 6 + 2},$${i * 6 + 3},$${i * 6 + 4},$${i * 6 + 5},$${i * 6 + 6})`).join(',');
+          const flatParams = toInsert.flat();
+          
+          await query(
+            `INSERT INTO attendance_records (user_id, student_id, course_id, attended_periods, conducted_periods, attendance_percentage) 
+             VALUES ${placeholders} ON CONFLICT (user_id, student_id, course_id) DO NOTHING`,
+            flatParams
+          );
         }
 
         const elapsed = performance.now() - startTime;
@@ -455,12 +470,14 @@ export class ExcelProcessor {
    */
   async cleanupInsufficientRecords(minConductedPeriods = 5): Promise<number> {
     try {
-      const result = await this.prisma.attendanceRecord.deleteMany({
-        where: { conducted_periods: { lt: minConductedPeriods } }
-      });
+      const result = await query(
+        'DELETE FROM attendance_records WHERE conducted_periods < $1',
+        [minConductedPeriods]
+      );
       
-      console.log(`Cleaned up ${result.count} records with insufficient conducted periods`);
-      return result.count;
+      const count = (result as any).rowCount || 0;
+      console.log(`Cleaned up ${count} records with insufficient conducted periods`);
+      return count;
     } catch (err) {
       console.error(`Error during cleanup: ${err}`);
       return 0;

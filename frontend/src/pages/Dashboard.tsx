@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Navbar from '../components/Navbar';
 import { clearAllData, deleteRecord, exportExcel, exportPdf, fetchAttendance, fetchCourses, fetchFilteredStats, fetchStats } from '../lib/api';
 
 interface AttendanceRow {
@@ -240,16 +241,18 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="dashboard">
-      {/* Header */}
-      <div className="dashboard-header">
-        <div className="container">
-          <div className="row align-items-center">
-            <div className="col-md-8">
-              <h1 className="mb-0"><i className="fas fa-chart-line me-3"></i>Attendance Dashboard</h1>
-              <p className="mb-0 opacity-75">Monitor student attendance across all courses</p>
-            </div>
-            <div className="col-md-4 text-end">
+    <>
+      <Navbar />
+      <div className="dashboard">
+        {/* Header */}
+        <div className="dashboard-header">
+          <div className="container">
+            <div className="row align-items-center">
+              <div className="col-md-8">
+                <h1 className="mb-0"><i className="fas fa-chart-line me-3"></i>Attendance Dashboard</h1>
+                <p className="mb-0 opacity-75">Monitor student attendance across all courses</p>
+              </div>
+              <div className="col-md-4 text-end">
               <button className="btn btn-warning me-2" id="clear-data-btn" title="Clear all attendance data from database" onClick={onClearAll}>
                 <i className="fas fa-database me-2"></i>Clear Data
               </button>
@@ -939,6 +942,7 @@ export default function Dashboard() {
           <p className="mb-0">&copy; 2025 Attendance Management System</p>
         </div>
       </footer>
-    </div>
+      </div>
+    </>
   );
 }

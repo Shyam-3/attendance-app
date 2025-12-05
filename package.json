@@ -17,7 +17,15 @@
     "setup:frontend": "cd frontend && npm install",
     "setup": "npm run setup:backend && npm run setup:frontend && npm run setup:functions"
   },
-  "keywords": ["attendance", "management", "firebase", "typescript"],
+  "keywords": [
+    "attendance",
+    "management",
+    "firebase",
+    "typescript"
+  ],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^7.1.0"
+  }
 }

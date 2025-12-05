@@ -1,21 +1,22 @@
-import type { PrismaClient } from '@prisma/client';
 import { Router } from 'express';
 import multer from 'multer';
+import { authenticateUser, type AuthRequest } from '../middleware/auth';
 import { AttendanceService } from '../services/attendanceService';
 import { ExcelProcessor } from '../utils/excelProcessor';
 
 const upload = multer({ limits: { fileSize: 16 * 1024 * 1024 } });
 
-export default function uploadRouter(prisma: PrismaClient) {
+export default function uploadRouter() {
   const router = Router();
-  const excelProcessor = new ExcelProcessor(prisma);
+  const excelProcessor = new ExcelProcessor();
 
   router.get('/', (_req, res) => {
     const frontend = process.env.FRONTEND_URL || 'http://127.0.0.1:5173';
     res.redirect(`${frontend}/upload`);
   });
 
-  router.post('/', upload.array('files', 21), async (req, res) => {
+  router.post('/', authenticateUser, upload.array('files', 21), async (req: AuthRequest, res) => {
+    const userId = req.userId!;
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
       return res.status(400).json({ success: false, error: 'No files selected' });
@@ -45,8 +46,8 @@ export default function uploadRouter(prisma: PrismaClient) {
         const processedData = await excelProcessor.processExcelFileFromMemory(file.buffer, file.originalname);
 
         if (processedData) {
-          // Save to database with metrics
-          const result = await excelProcessor.saveToDatabase(processedData);
+          // Save to database with metrics and userId
+          const result = await excelProcessor.saveToDatabase(processedData, userId);
 
           if (result.success && result.metrics) {
             processed += 1;

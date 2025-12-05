@@ -7,12 +7,13 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
 dist
 dist-ssr
 *.local
-build/
-*.tsbuildinfo
+package-lock.json
+yarn.lock
 
 # Temporary files
 *.tmp
@@ -27,8 +28,9 @@ build/
 .env
 .env.local
 .env.production
+.env.test
 
-# Editor directories and files
+# IDE / Editor
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -38,3 +40,11 @@ build/
 *.njsproj
 *.sln
 *.sw?
+*.crt
+*.pem
+
+# Build artifacts
+.vite/
+.next/
+out/
+

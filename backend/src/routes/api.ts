@@ -1,10 +1,9 @@
-import type { PrismaClient } from '@prisma/client';
 import { Router } from 'express';
+import { authenticateUser, type AuthRequest } from '../middleware/auth';
 import { AttendanceService } from '../services/attendanceService';
 
-export default function apiRouter(prisma: PrismaClient) {
+export default function apiRouter() {
   const router = Router();
-  const attendanceService = new AttendanceService(prisma);
 
   // Disable caching for all API routes to ensure 200 OK responses (not 304)
   router.use((_req, res, next) => {
@@ -14,7 +13,11 @@ export default function apiRouter(prisma: PrismaClient) {
     next();
   });
 
-  router.get('/attendance', async (req, res) => {
+  // Apply authentication to all routes
+  router.use(authenticateUser);
+
+  router.get('/attendance', async (req: AuthRequest, res) => {
+    const userId = req.userId!;
     const course = String(req.query.course || '');
     const threshold = Number(req.query.threshold || 75);
     const search = String(req.query.search || '');
@@ -25,8 +28,8 @@ export default function apiRouter(prisma: PrismaClient) {
 
     try {
       const [records, total] = await Promise.all([
-        attendanceService.getFilteredAttendanceRecords(course, threshold, search, excludeCourses, page, perPage),
-        attendanceService.getFilteredAttendanceCount(course, threshold, search, excludeCourses)
+        AttendanceService.getFilteredAttendanceRecords(userId, course, threshold, search, excludeCourses, page, perPage),
+        AttendanceService.getFilteredAttendanceCount(userId, course, threshold, search, excludeCourses)
       ]);
 
       // Format records for frontend (matches Python format_attendance_data_for_export)
@@ -55,9 +58,10 @@ export default function apiRouter(prisma: PrismaClient) {
     }
   });
 
-  router.get('/stats', async (_req, res) => {
+  router.get('/stats', async (req: AuthRequest, res) => {
+    const userId = req.userId!;
     try {
-      const stats = await attendanceService.calculateDashboardStats();
+      const stats = await AttendanceService.calculateDashboardStats(userId);
       res.status(200).json(stats);
     } catch (err: any) {
       console.error('Error in /api/stats:', err);
@@ -65,7 +69,8 @@ export default function apiRouter(prisma: PrismaClient) {
     }
   });
 
-  router.get('/filtered_stats', async (req, res) => {
+  router.get('/filtered_stats', async (req: AuthRequest, res) => {
+    const userId = req.userId!;
     const course = String(req.query.course || '');
     const threshold = Number(req.query.threshold || 75);
     const search = String(req.query.search || '');
@@ -73,7 +78,7 @@ export default function apiRouter(prisma: PrismaClient) {
     const excludeCourses = excludeCoursesStr ? excludeCoursesStr.split(',').map(s => s.trim()).filter(Boolean) : undefined;
 
     try {
-      const stats = await attendanceService.calculateFilteredStats(course, threshold, search, excludeCourses);
+      const stats = await AttendanceService.calculateFilteredStats(userId, course, threshold, search, excludeCourses);
       res.status(200).json(stats);
     } catch (err: any) {
       console.error('Error in /api/filtered_stats:', err);
@@ -81,9 +86,10 @@ export default function apiRouter(prisma: PrismaClient) {
     }
   });
 
-  router.get('/courses', async (_req, res) => {
+  router.get('/courses', async (req: AuthRequest, res) => {
+    const userId = req.userId!;
     try {
-      const courses = await attendanceService.getAllCourses();
+      const courses = await AttendanceService.getAllCourses(userId);
       res.status(200).json(courses.map((c: any) => ({ code: c.course_code, name: c.course_name })));
     } catch (err: any) {
       console.error('Error in /api/courses:', err);
