@@ -231,17 +231,55 @@ export async function closePool(): Promise<void> {
 }
 
 /**
- * Run database migrations
+ * Run database migrations and create tables if they don't exist
  */
 export async function runMigrations(): Promise<void> {
   try {
     console.log('Starting database migration...\n');
     
-    // Migration SQL - run each statement separately for better error handling
+    // Create tables if they don't exist
+    const createTableStatements = [
+      `CREATE TABLE IF NOT EXISTS students (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(100) NOT NULL,
+        admission_no VARCHAR(50),
+        registration_no VARCHAR(50) NOT NULL,
+        name VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, registration_no)
+      )`,
+      `CREATE TABLE IF NOT EXISTS courses (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(100) NOT NULL,
+        course_code VARCHAR(50) NOT NULL,
+        course_name VARCHAR(200) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, course_code)
+      )`,
+      `CREATE TABLE IF NOT EXISTS attendance_records (
+        id SERIAL PRIMARY KEY,
+        user_id VARCHAR(100) NOT NULL,
+        student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        course_id INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+        attended_periods INTEGER NOT NULL,
+        conducted_periods INTEGER NOT NULL,
+        attendance_percentage DECIMAL(5, 2) NOT NULL,
+        upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, student_id, course_id)
+      )`
+    ];
+
+    for (const stmt of createTableStatements) {
+      try {
+        await query(stmt);
+        console.log(`✓ Table creation statement executed`);
+      } catch (err: any) {
+        console.warn(`⚠ Table creation: ${err.message}`);
+      }
+    }
+
+    // Add indexes for performance
     const statements = [
-      'ALTER TABLE IF EXISTS students ADD COLUMN IF NOT EXISTS user_id VARCHAR(100)',
-      'ALTER TABLE IF EXISTS courses ADD COLUMN IF NOT EXISTS user_id VARCHAR(100)',
-      'ALTER TABLE IF EXISTS attendance_records ADD COLUMN IF NOT EXISTS user_id VARCHAR(100)',
       'CREATE INDEX IF NOT EXISTS idx_students_user_id ON students (user_id)',
       'CREATE INDEX IF NOT EXISTS idx_courses_user_id ON courses (user_id)',
       'CREATE INDEX IF NOT EXISTS idx_attendance_user_id ON attendance_records (user_id)',
@@ -291,14 +329,12 @@ export async function runMigrations(): Promise<void> {
 
     console.log('\n✅ Migration completed successfully!');
     console.log('Changes applied:');
-    console.log('  • Added user_id columns to students, courses, attendance_records');
+    console.log('  • Created tables: students, courses, attendance_records');
     console.log('  • Created indexes for performance');
     console.log('  • Added unique constraints for data isolation');
     
   } catch (err: any) {
     console.error('❌ Migration failed:', err.message || err);
     process.exit(1);
-  } finally {
-    await closePool();
   }
 }

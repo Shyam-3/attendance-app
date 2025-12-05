@@ -2,7 +2,7 @@ import cors from 'cors';
 import 'dotenv/config';
 import express from 'express';
 import morgan from 'morgan';
-import { query } from './db';
+import { query, runMigrations } from './db';
 import { authenticateUser, type AuthRequest } from './middleware/auth';
 import apiRouter from './routes/api';
 import exportRouter from './routes/export';
@@ -84,6 +84,9 @@ async function startServer() {
     // Test database connection
     await query('SELECT 1');
     console.log('✅ Database ready');
+    
+    // Run migrations to create tables if needed
+    await runMigrations();
     
     app.listen(PORT, () => {
       console.log('🚀 Starting Attendance Management System...');

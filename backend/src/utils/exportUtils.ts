@@ -65,7 +65,7 @@ export class ExportUtils {
         course_name: record.course_name,
         attended_periods: record.attended_periods,
         conducted_periods: record.conducted_periods,
-        attendance_percentage: Number(record.attendance_percentage.toFixed(1))
+        attendance_percentage: Number(record.attendance_percentage) || 0
       });
     });
 

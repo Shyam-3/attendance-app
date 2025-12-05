@@ -264,7 +264,7 @@ export class AttendanceService {
       course_name: row.course_name,
       attended_periods: row.attended_periods,
       conducted_periods: row.conducted_periods,
-      attendance_percentage: Number(row.attendance_percentage.toFixed(1))
+      attendance_percentage: Number(row.attendance_percentage) || 0
     }));
   }
 
@@ -381,7 +381,7 @@ export class AttendanceService {
       'Course Name': r.course_name,
       'Attended Periods': r.attended_periods,
       'Conducted Periods': r.conducted_periods,
-      'Attendance %': Number(r.attendance_percentage.toFixed(1))
+      'Attendance %': Number(r.attendance_percentage) || 0
     }));
   }
 }
