@@ -991,7 +991,7 @@ export default function Dashboard() {
       {/* Footer */}
       <footer className="mt-5 py-4 bg-dark text-white text-center">
         <div className="container">
-          <p className="mb-0">&copy; 2025 Attendance Management System</p>
+          <p className="mb-0">&copy; {new Date().getFullYear()} Attendance Management System</p>
         </div>
       </footer>
       </div>
