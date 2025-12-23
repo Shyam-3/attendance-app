@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import Navbar from '../components/Navbar';
 import { clearAllData, deleteRecord, exportExcel, exportPdf, fetchAttendance, fetchCourses, fetchFilteredStats, fetchStats } from '../lib/api';
 
@@ -53,7 +53,7 @@ export default function Dashboard() {
   const [perPageDropdownFixed, setPerPageDropdownFixed] = useState(false);
   const [perPageJustSelected, setPerPageJustSelected] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [perPage, setPerPage] = useState(100);
+  const [perPage, setPerPage] = useState(50);
   const [totalRecords, setTotalRecords] = useState(0);
   const courseDropdownRef = useRef(null);
   const excludeDropdownRef = useRef(null);
@@ -62,6 +62,15 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(false);
   const suppressPageLoadRef = useRef(false);
   const debounceTimerRef = useRef<number | null>(null);
+  const [confirmState, setConfirmState] = useState<{
+    open: boolean;
+    title?: string;
+    message?: ReactNode;
+    confirmText?: string;
+    destructive?: boolean;
+    onConfirm?: (typed?: string) => void | Promise<void>;
+  }>({ open: false });
+  const [infoDialog, setInfoDialog] = useState<{ open: boolean; title?: string; message?: ReactNode }>({ open: false });
 
   // Filter changes: reset to page 1 and debounce loads
   useEffect(() => {
@@ -209,35 +218,55 @@ export default function Dashboard() {
 
   async function onDelete(recordId?: number) {
     if (!recordId) {
-      alert('Missing record id.');
+      setConfirmState({
+        open: true,
+        title: 'Delete Error',
+        message: 'Missing record id.',
+        destructive: false,
+        onConfirm: () => setConfirmState({ open: false })
+      });
       return;
     }
-    if (!confirm('Are you sure you want to delete this record?')) return;
-    await deleteRecord(recordId);
-    await load();
-    await loadFilteredStats();
+    setConfirmState({
+      open: true,
+      title: 'Confirm Delete',
+      message: 'Are you sure you want to delete this record? This action cannot be undone.',
+      destructive: true,
+      onConfirm: async () => {
+        setConfirmState({ open: false });
+        await deleteRecord(recordId);
+        await load();
+        await loadFilteredStats();
+        setInfoDialog({ open: true, title: 'Deleted', message: 'The record has been deleted successfully.' });
+      }
+    });
   }
 
   async function onClearAll() {
-    if (!confirm('This will delete ALL data. Type DELETE in the next prompt to confirm.')) return;
-    const confirmText = prompt('Type "DELETE" to confirm (case sensitive):');
-    if (confirmText !== 'DELETE') return;
-
-    try {
-      await clearAllData();
-      setExcludeCourses([]); // Reset exclude courses to default
-      // Reload all data to reflect the cleared state
-      await Promise.all([
-        load(),
-        loadStats(),
-        loadFilteredStats(),
-        loadCourses()
-      ]);
-      alert('All data has been cleared successfully!');
-    } catch (error) {
-      console.error('Error clearing data:', error);
-      alert('Failed to clear data. Please try again.');
-    }
+    setConfirmState({
+      open: true,
+      title: 'Clear All Data',
+      message: (
+        <span>
+          This will permanently delete <strong>ALL</strong> attendance data.
+          Please type <strong>DELETE</strong> to confirm.
+        </span>
+      ),
+      confirmText: 'DELETE',
+      destructive: true,
+      onConfirm: async () => {
+        setConfirmState({ open: false });
+        try {
+          await clearAllData();
+          setExcludeCourses([]); // Reset exclude courses to default
+          await Promise.all([load(), loadStats(), loadFilteredStats(), loadCourses()]);
+          setInfoDialog({ open: true, title: 'Data Cleared', message: 'All attendance data has been removed successfully.' });
+        } catch (error) {
+          console.error('Error clearing data:', error);
+          setInfoDialog({ open: true, title: 'Error', message: 'Failed to clear data. Please try again.' });
+        }
+      }
+    });
   }
 
   return (
@@ -918,6 +947,29 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Confirm Dialog */}
+        <ConfirmDialog
+          open={confirmState.open}
+          title={confirmState.title}
+          message={confirmState.message}
+          confirmText={confirmState.confirmText}
+          destructive={confirmState.destructive}
+          confirmButtonLabel={confirmState.confirmText ? 'Delete' : 'Confirm'}
+          cancelButtonLabel="Cancel"
+          onCancel={() => setConfirmState({ open: false })}
+          onConfirm={(typed) => confirmState.onConfirm?.(typed)}
+        />
+
+        {/* Info Dialog for success messages */}
+        <ConfirmDialog
+          open={infoDialog.open}
+          title={infoDialog.title}
+          message={infoDialog.message}
+          destructive={false}
+          variant="info"
+          onConfirm={() => setInfoDialog({ open: false })}
+        />
+
         {/* Export buttons at bottom */}
         {rows.length > 0 && (
           <div className="row mt-4">
@@ -944,5 +996,103 @@ export default function Dashboard() {
       </footer>
       </div>
     </>
+  );
+}
+
+// Inline ConfirmDialog to reduce file count
+function ConfirmDialog({
+  open,
+  title = 'Confirm',
+  message = 'Are you sure?',
+  confirmText,
+  confirmButtonLabel,
+  cancelButtonLabel = 'Cancel',
+  destructive = false,
+  hideCancel = false,
+  variant = 'confirm',
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title?: string;
+  message?: ReactNode;
+  confirmText?: string;
+  confirmButtonLabel?: string;
+  cancelButtonLabel?: string;
+  destructive?: boolean;
+  hideCancel?: boolean;
+  variant?: 'confirm' | 'info';
+  onConfirm: (typed?: string) => void | Promise<void>;
+  onCancel?: () => void;
+}) {
+  const [typed, setTyped] = useState('');
+  useEffect(() => { 
+    if (!open) {
+      setTyped(''); 
+    } else {
+      console.log('[ConfirmDialog] Opened:', { title, variant, destructive, confirmText, message });
+    }
+  }, [open, title, variant, destructive, confirmText, message]);
+  if (!open) return null;
+  const isInfo = variant === 'info';
+  const computedConfirmLabel = confirmButtonLabel || (isInfo ? 'OK' : 'Confirm');
+  const showCancel = !isInfo && !hideCancel && !!onCancel;
+
+  const overlayStyle: CSSProperties = {
+    position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050,
+  };
+  const modalStyle: CSSProperties = {
+    backgroundColor: '#fff', borderRadius: 8, width: 'min(520px, 92vw)', boxShadow: '0 10px 30px rgba(0,0,0,0.25)'
+  };
+
+  return (
+    <div style={overlayStyle} role="dialog" aria-modal="true">
+      <div className="card shadow" style={modalStyle}>
+        <div className="card-body">
+          <div className="d-flex align-items-center mb-2" style={{ gap: 10 }}>
+            <div className={`rounded-circle d-flex align-items-center justify-content-center ${isInfo ? 'bg-success' : (destructive ? 'bg-danger' : 'bg-primary')}`} style={{ width: 34, height: 34 }}>
+              <i className={`fas ${isInfo ? 'fa-check' : 'fa-exclamation'} text-white`} aria-hidden="true"></i>
+            </div>
+            <h5 className="mb-0">{title}</h5>
+          </div>
+          <div className="mb-3 text-muted" style={{ lineHeight: 1.5 }}>
+            {message}
+          </div>
+          {!isInfo && confirmText && (
+            <div className="mb-3">
+              <label htmlFor="confirmInput" className="form-label small mb-1">
+                Type <strong>{confirmText}</strong> to continue
+              </label>
+              <input
+                id="confirmInput"
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder={confirmText}
+                className="form-control"
+                autoFocus
+              />
+            </div>
+          )}
+          <div className="d-flex justify-content-end gap-2">
+            {showCancel && (
+              <button className="btn btn-outline-secondary" onClick={() => {
+                console.log('[ConfirmDialog] Cancel clicked');
+                onCancel?.();
+              }}>{cancelButtonLabel}</button>
+            )}
+            <button
+              className={`btn ${isInfo ? 'btn-success' : (destructive ? 'btn-danger' : 'btn-primary')}`}
+              onClick={() => {
+                console.log('[ConfirmDialog] Confirm clicked:', { typed, confirmText, variant });
+                onConfirm(typed);
+              }}
+              disabled={!isInfo && !!confirmText && typed !== confirmText}
+            >
+              {computedConfirmLabel}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
