@@ -16,6 +16,7 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'http://127.0.0.1:5173';
 app.use(cors({
   origin: '*',
   methods: ['GET','POST','DELETE'],
+  exposedHeaders: ['Content-Disposition'],
 }));
 app.use(morgan('dev'));
 app.use(express.json());

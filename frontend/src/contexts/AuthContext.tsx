@@ -6,7 +6,7 @@ interface AuthContextType {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: any }>;
+  signUp: (email: string, password: string, name: string) => Promise<{ error: any }>;
   signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
 }
@@ -38,11 +38,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => subscription.unsubscribe();
   }, []);
 
-  const signUp = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
+  const signUp = async (email: string, password: string, name: string) => {
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      options: {
+        data: {
+          name: name,
+          display_name: name,
+        },
+      },
     });
+    
+    // Check if user already exists (Supabase returns user but with identities: [])
+    if (!error && data.user && data.user.identities && data.user.identities.length === 0) {
+      return { error: { message: 'User already exists. Please login instead.' } };
+    }
+    
+    // Update display_name in user metadata after signup
+    if (!error && data.user) {
+      await supabase.auth.updateUser({
+        data: { display_name: name }
+      });
+    }
+    
     return { error };
   };
 

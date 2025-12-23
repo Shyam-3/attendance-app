@@ -6,6 +6,7 @@ import './Auth.css';
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signIn } = useAuth();
@@ -58,7 +59,7 @@ export default function Login() {
           <div className="form-group">
             <label htmlFor="password">Password</label>
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               id="password"
               className="form-control"
               placeholder="Enter your password"
@@ -67,6 +68,19 @@ export default function Login() {
               required
               disabled={loading}
             />
+          </div>
+
+          <div className="form-check mb-3">
+            <input
+              type="checkbox"
+              className="form-check-input"
+              id="showPassword"
+              checked={showPassword}
+              onChange={(e) => setShowPassword(e.target.checked)}
+            />
+            <label className="form-check-label">
+              Show password
+            </label>
           </div>
 
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>

@@ -50,7 +50,7 @@ export default function Navbar() {
           <div className="d-flex align-items-center">
             <span className="navbar-text me-3">
               <i className="fas fa-user-circle me-1"></i>
-              {user?.email}
+              {user?.user_metadata?.name || user?.email}
             </span>
             <button className="btn btn-outline-light btn-sm" onClick={handleLogout}>
               <i className="fas fa-sign-out-alt me-1"></i>

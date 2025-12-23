@@ -4,9 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import './Auth.css';
 
 export default function Signup() {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signUp } = useAuth();
@@ -15,6 +17,10 @@ export default function Signup() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    if (!name.trim()) {
+      return setError('Name is required');
+    }
 
     if (password !== confirmPassword) {
       return setError('Passwords do not match');
@@ -26,7 +32,7 @@ export default function Signup() {
 
     setLoading(true);
 
-    const { error } = await signUp(email, password);
+    const { error } = await signUp(email, password, name.trim());
 
     if (error) {
       setError(error.message);
@@ -53,6 +59,20 @@ export default function Signup() {
 
         <form onSubmit={handleSubmit} className="auth-form">
           <div className="form-group">
+            <label htmlFor="name">Full Name</label>
+            <input
+              type="text"
+              id="name"
+              className="form-control"
+              placeholder="Enter your full name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              disabled={loading}
+            />
+          </div>
+
+          <div className="form-group">
             <label htmlFor="email">Email Address</label>
             <input
               type="email"
@@ -69,7 +89,7 @@ export default function Signup() {
           <div className="form-group">
             <label htmlFor="password">Password</label>
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               id="password"
               className="form-control"
               placeholder="Enter your password"
@@ -84,7 +104,7 @@ export default function Signup() {
           <div className="form-group">
             <label htmlFor="confirmPassword">Confirm Password</label>
             <input
-              type="password"
+              type={showPassword ? "text" : "password"}
               id="confirmPassword"
               className="form-control"
               placeholder="Confirm your password"
@@ -94,6 +114,19 @@ export default function Signup() {
               disabled={loading}
               minLength={6}
             />
+          </div>
+
+          <div className="form-check mb-3">
+            <input
+              type="checkbox"
+              className="form-check-input"
+              id="showPassword"
+              checked={showPassword}
+              onChange={(e) => setShowPassword(e.target.checked)}
+            />
+            <label className="form-check-label">
+              Show password
+            </label>
           </div>
 
           <button type="submit" className="btn btn-primary btn-block" disabled={loading}>

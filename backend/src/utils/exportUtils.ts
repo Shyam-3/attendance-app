@@ -24,7 +24,7 @@ export class ExportUtils {
   async generateExcelExport(
     data: ExportRecord[],
     filterInfo?: string[],
-    filenamePrefix = 'attendance'
+    filenamePrefix = 'Attendance'
   ): Promise<{ buffer: Buffer; filename: string }> {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Low Attendance Report');
@@ -69,6 +69,36 @@ export class ExportUtils {
       });
     });
 
+    // Enable word-wrap and vertical centering for name columns
+    const headerRow = worksheet.getRow(1);
+    headerRow.eachCell(cell => {
+      cell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+    });
+    const studentNameCol = worksheet.getColumn('student_name');
+    const courseNameCol = worksheet.getColumn('course_name');
+    studentNameCol.eachCell({ includeEmpty: true }, cell => {
+      cell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+    });
+    courseNameCol.eachCell({ includeEmpty: true }, cell => {
+      cell.alignment = { wrapText: true, vertical: 'middle', horizontal: 'center' };
+    });
+
+    // Center-align all other cells
+    worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return; // header already styled
+      row.eachCell(cell => {
+        const prior = cell.alignment || {} as ExcelJS.Alignment;
+        cell.alignment = { ...prior, horizontal: 'center', vertical: 'middle' };
+      });
+    });
+
+    // Adjust column widths based on content length (clamped)
+    const clamp = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+    const maxStudentLen = Math.max(10, ...data.map(d => (d.student_name || '').length));
+    const maxCourseLen = Math.max(10, ...data.map(d => (d.course_name || '').length));
+    studentNameCol.width = clamp(Math.ceil(maxStudentLen * 0.9), 30, 50);
+    courseNameCol.width = clamp(Math.ceil(maxCourseLen * 0.8), 25, 45);
+
     // Add filter info at bottom
     if (filterInfo && filterInfo.length > 0) {
       worksheet.addRow([]);
@@ -79,12 +109,17 @@ export class ExportUtils {
     const buffer = await workbook.xlsx.writeBuffer();
 
     // Build descriptive filename based on filters (same as Python)
-    let filename = 'attendance';
+    let filename = 'Attendance';
     if (filterInfo && filterInfo.length > 0) {
       const filterStr = filterInfo
-        .map(f => String(f).replace(/:/g, '').replace(/,/g, '').replace(/\|/g, ''))
-        .join(', ');
-      filename = filterStr;
+        .map(f => String(f)
+          .replace(/:/g, '')
+          .replace(/,/g, '')
+          .replace(/\|/g, '')
+          .replace(/\s+/g, ' ')
+        )
+        .join(' ');
+      filename = filterStr || filename;
     }
     filename = `${filename}.xlsx`;
     
@@ -110,19 +145,22 @@ export class ExportUtils {
         const buffer = Buffer.concat(chunks);
         
         // Build descriptive filename based on filters (same as Python)
-        let filename = 'attendance';
+        let filename = 'Attendance';
         if (filterInfo && filterInfo.length > 0) {
-          console.log(filterInfo+" <- filterInfo");
-          // const filterStr = filterInfo;
-          let filterStr = filterInfo;
-          //   .map(f => String(f).replace(/:/g, '').replace(/,/g, '').replace(/\|/g, ''))
-          //   .join(', ');
-          filename  = filename + filterStr;
+          const filterStr = filterInfo
+            .map(f => String(f)
+              .replace(/:/g, '')
+              .replace(/,/g, '')
+              .replace(/\|/g, '')
+              .replace(/\s+/g, ' ')
+            )
+            .join(' ');
+          filename = filterStr || filename;
         }
         filename = `${filename}.pdf`;
-        console.log(filename+" <- filter");
+        
         // Sanitize filename to prevent header issues
-        // filename = filename.replace(/"/g, '').replace(/'/g, '');
+        filename = filename.replace(/"/g, '').replace(/'/g, '');
         
         resolve({ buffer, filename });
       });
@@ -171,13 +209,28 @@ export class ExportUtils {
 
       // Table rendering with header as first row
       let y = doc.y;
-      const rowHeight = 20; // Consistent row height matching Python
+      const baseRowHeight = 20; // minimum row height
       const bodyFont = 'Helvetica';
       const bodySize = 8;
+
+      const computeRowHeight = (texts: any[], isHeader: boolean) => {
+        if (isHeader) return Math.max(baseRowHeight, 22);
+        // Determine needed height based on wrapped text within each column
+        let maxH = baseRowHeight;
+        doc.font(bodyFont).fontSize(bodySize);
+        texts.forEach((t, i) => {
+          const text = String(t ?? '');
+          const w = colWidths[i] - 8; // padding
+          const h = doc.heightOfString(text, { width: w, align: 'center' });
+          maxH = Math.max(maxH, h + 10); // include vertical padding
+        });
+        return maxH;
+      };
 
       const drawRow = (row: any[], isHeader: boolean, highlight: 'low' | 'mid' | 'high' | null) => {
         let cx = doc.page.margins.left;
         let cy = y;
+        const rowHeight = computeRowHeight(row, isHeader);
         
         // Background color
         let bgColor: string;
@@ -199,10 +252,11 @@ export class ExportUtils {
           doc.font(bodyFont).fontSize(bodySize).fillColor('#000000');
         }
         
-        // Draw text cells
+        // Draw text cells (center align all values)
         row.forEach((text, i) => {
           const w = colWidths[i];
-          doc.text(String(text ?? ''), cx + 4, cy + 5, { width: w - 8, align: 'center' });
+          const align = 'center';
+          doc.text(String(text ?? ''), cx + 4, cy + 5, { width: w - 8, align });
           cx += w;
         });
         
