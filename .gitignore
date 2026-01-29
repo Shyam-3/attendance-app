@@ -1,0 +1,80 @@
+# Python legacy (if keeping reference files)
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+venv/
+ENV/
+env/
+.venv
+
+# Node/TypeScript
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/package-lock.json
+
+# Backend
+backend/node_modules/
+backend/dist/
+backend/package-lock.json
+
+# Database
+*.db
+*.sqlite
+*.db-journal
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Firebase
+.firebase/
+.firebaserc.local
+firebase-debug.log
+firebase-debug.*.log
+functions/node_modules/
+functions/dist/
+functions/lib/
+functions/package-lock.json
+functions/prisma/
+
+# Temporary files
+*.tmp
+*.bak
+*.bat
+
+# Temporary Markdown files (keep README.md and DOCUMENTATION.md only)
+*.md
+!README.md
+!DOCUMENTATION.md
+!CLEANUP.md
+
+# Generated exports (optional - uncomment if you don't want to track exports)
+# *.pdf
+# *.xlsx
+# *.xls

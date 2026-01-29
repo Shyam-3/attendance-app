@@ -1,0 +1,31 @@
+{
+  "name": "attendance-tracker-ts",
+  "version": "1.0.0",
+  "description": "Attendance Management System with Firebase Hosting",
+  "scripts": {
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build": "npm run build:frontend",
+    "deploy:functions": "powershell -ExecutionPolicy Bypass -File ./functions/copy-prisma.ps1 && cd functions && npm install && firebase deploy --only functions",
+    "deploy:hosting": "npm run build:frontend && firebase deploy --only hosting",
+    "deploy": "powershell -ExecutionPolicy Bypass -File ./functions/copy-prisma.ps1 && cd functions && npm install && cd .. && npm run build:frontend && firebase deploy",
+    "firebase:init": "firebase login && firebase init",
+    "setup:functions": "cd functions && npm install",
+    "setup:backend": "cd backend && npm install",
+    "setup:frontend": "cd frontend && npm install",
+    "setup": "npm run setup:backend && npm run setup:frontend && npm run setup:functions"
+  },
+  "keywords": [
+    "attendance",
+    "management",
+    "firebase",
+    "typescript"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@prisma/client": "^7.1.0"
+  }
+}
