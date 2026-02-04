@@ -268,6 +268,7 @@ See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed directory struct
 
 This project is built for academic purposes.
 
+
 ---
 
 **Built with ❤️ for academic excellence**
