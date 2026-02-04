@@ -266,8 +266,6 @@ See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed directory struct
 
 ---
 
-## 📝 License
-
 This project is built for academic purposes.
 
 ---
