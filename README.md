@@ -1,11 +1,12 @@
 # 📊 Attendance Management System
 
-A modern, full-stack web application for managing student attendance records with powerful filtering, analytics, and export capabilities.
+A modern, full-stack web application for managing student attendance records with user authentication, powerful filtering, analytics, and export capabilities.
 
 ## 🎯 What is this project?
 
-This is a complete **Attendance Management System** built with a Flask backend (REST API) and React frontend (TypeScript + Vite). It allows educational institutions to:
+This is a complete **Attendance Management System** built with a Node.js/Express backend (TypeScript, REST API) and React frontend (TypeScript + Vite). It allows teachers to securely manage their students' attendance data with full isolation between users. Key capabilities include:
 
+- **Authenticate** with a personal teacher account (sign up / login via Supabase Auth)
 - **Upload** student attendance data from Excel files (including bulk uploads via ZIP files)
 - **Track** attendance percentages across multiple courses
 - **Filter** students by course, attendance threshold, or search criteria
@@ -13,18 +14,26 @@ This is a complete **Attendance Management System** built with a Flask backend (
 - **Export** filtered data to professionally formatted Excel and PDF reports
 - **Manage** records with individual delete and bulk clear operations
 
-The system provides real-time statistics, color-coded attendance indicators, and an intuitive dashboard for quick insights into student performance.
+The system provides real-time statistics, color-coded attendance indicators, and an intuitive dashboard for quick insights into student performance. All data is isolated per user — each teacher only sees their own records.
 
 ---
 
 ## ✨ Key Features
 
+### 🔐 Authentication & Multi-User Support
+- **Sign up / Login**: Teacher accounts powered by Supabase Auth
+- **Protected routes**: Dashboard and Upload pages require authentication
+- **Per-user data isolation**: Each teacher's students, courses, and attendance records are fully separate
+- **Persistent sessions**: Stay logged in across browser refreshes
+- **Logout**: Securely end your session from the navbar
+
 ### 📤 File Upload & Processing
-- **Multi-file upload**: Upload up to 20 Excel files at once
-- **ZIP file support**: Extract and process multiple Excel files from ZIP archives
+- **Multi-file upload**: Upload up to 20 Excel files at once with per-file progress tracking
+- **ZIP file support**: Extract and process multiple Excel files from ZIP archives (client-side extraction via JSZip)
 - **Format support**: `.xlsx`, `.xls`, `.csv` files
 - **Smart parsing**: Automatically detects and extracts student data, course info, and attendance records
 - **Nested folder support**: Handles Excel files in subdirectories within ZIP files
+- **Upload progress bar**: Visual progress indicator with per-file status (processing / success / error)
 
 ### 📊 Dashboard & Analytics
 - **Real-time statistics cards**:
@@ -42,6 +51,7 @@ The system provides real-time statistics, color-coded attendance indicators, and
   - Sortable columns
   - Hover-to-open dropdown filters
   - Click-to-pin dropdown filters
+- **Pagination**: Efficiently browse large datasets with server-side pagination
 
 ### 📥 Export Capabilities
 - **Excel Export**: Professionally formatted with styled headers, auto-sized columns, and colored rows
@@ -51,118 +61,151 @@ The system provides real-time statistics, color-coded attendance indicators, and
 
 ### 🔧 Data Management
 - **Individual record deletion**: Remove specific attendance records
-- **Bulk data clearing**: Clear all data with confirmation prompt
+- **Bulk data clearing**: Clear all your data with confirmation prompt
 - **Real-time updates**: UI updates immediately after data modifications
-- **Data persistence**: PostgreSQL (Supabase) or SQLite database for reliable storage
+- **Data persistence**: PostgreSQL (Supabase) for reliable, cloud-hosted storage
 
 ---
 
 ## 🏗️ Architecture
 
-### Backend (Flask + SQLAlchemy)
-- **Framework**: Flask 3.0+ with RESTful API design
-- **Database**: PostgreSQL (Supabase) or SQLite with SQLAlchemy ORM
+### Backend (Express.js + TypeScript)
+- **Framework**: Express 4.19+ with RESTful API design
+- **Database**: PostgreSQL via `pg` (raw SQL, connection pooling)
+- **Auth**: Supabase Auth JWT verification middleware
 - **Structure**:
-  - `app.py` - Main application with route definitions
-  - `backend/models.py` - Database models (Student, Course, AttendanceRecord)
-  - `backend/services/attendance_service.py` - Business logic and statistics
-  - `backend/utils/excel_processor.py` - Excel file parsing
-  - `backend/utils/export_utils.py` - PDF and Excel generation
-  - `backend/config.py` - Configuration settings
+  - `backend/src/index.ts` - Main application entry point, server startup, and migrations
+  - `backend/src/routes/api.ts` - Attendance, stats, and courses endpoints
+  - `backend/src/routes/upload.ts` - File upload and processing route
+  - `backend/src/routes/export.ts` - Excel and PDF export routes
+  - `backend/src/services/attendanceService.ts` - Business logic, statistics, and caching
+  - `backend/src/utils/excelProcessor.ts` - Excel file parsing and database operations
+  - `backend/src/utils/exportUtils.ts` - PDF and Excel report generation
+  - `backend/src/middleware/auth.ts` - Supabase JWT authentication middleware
+  - `backend/src/db/index.ts` - Database pool, queries, and migration runner
 
 ### Frontend (React + TypeScript)
 - **Framework**: React 19 with TypeScript
 - **Build Tool**: Vite 7 for fast development and optimized builds
 - **UI Library**: Bootstrap 5 for responsive design
 - **Structure**:
+  - `frontend/src/App.tsx` - Main app component with routing and auth provider
   - `frontend/src/pages/Dashboard.tsx` - Main dashboard with filters and table
-  - `frontend/src/pages/Upload.tsx` - File upload interface
-  - `frontend/src/lib/api.ts` - API client for backend communication
-  - `frontend/src/App.tsx` - Main app component with routing
+  - `frontend/src/pages/Upload.tsx` - File upload interface with progress tracking
+  - `frontend/src/pages/Login.tsx` - Sign-in page
+  - `frontend/src/pages/Signup.tsx` - Teacher account registration page
+  - `frontend/src/components/Navbar.tsx` - Navigation bar with user info and logout
+  - `frontend/src/components/ProtectedRoute.tsx` - Auth guard for protected pages
+  - `frontend/src/contexts/AuthContext.tsx` - Supabase Auth state and helpers
+  - `frontend/src/lib/api.ts` - API client (attaches auth tokens to every request)
+  - `frontend/src/lib/supabase.ts` - Supabase client initialization
+
+### Firebase (Deployment)
+- **Firebase Hosting**: Serves the compiled React frontend (`frontend/dist`)
+- **Firebase Functions**: `functions/src/index.ts` — Express app exported as a Cloud Function (`api`)
 
 ---
 
 ## 🚀 How to Run
 
 ### Prerequisites
-- **Python**: 3.10 or higher
 - **Node.js**: 18 or higher
 - **npm**: Comes with Node.js
+- **Supabase project**: For database and authentication ([supabase.com](https://supabase.com))
 
 ### Backend Setup
 
-1. **Install Python dependencies**:
+1. **Navigate to the backend directory**:
    ```bash
-   pip install -r requirements.txt
+   cd backend
    ```
 
-2. **Configure Database** (Choose one):
-   
-   **Option A: PostgreSQL (Supabase) - Recommended for production**
-   - See [SUPABASE_SETUP.md](SUPABASE_SETUP.md) for detailed setup instructions
-   - Create a `.env` file with your Supabase connection string:
-     ```
-     DATABASE_URL=postgresql://postgres:[PASSWORD]@db.xxxxx.supabase.co:5432/postgres
-     ```
-   
-   **Option B: SQLite - Quick local development**
-   - No configuration needed
-   - Database file will be created automatically at `instance/attendance.db`
-
-3. **Start the Flask server**:
-   ```bash
-   python app.py
-   ```
-   The backend API will run on `http://127.0.0.1:5000`
-
-### Frontend Setup
-
-1. **Navigate to frontend directory**:
-   ```bash
-   cd frontend
-   ```
-
-2. **Install Node.js dependencies**:
+2. **Install dependencies**:
    ```bash
    npm install
    ```
 
-3. **Start the development server**:
+3. **Configure environment variables**:
+   Create a `.env` file in the `backend/` directory:
+   ```
+   DATABASE_URL=postgresql://postgres:[PASSWORD]@db.xxxxx.supabase.co:5432/postgres
+   SUPABASE_URL=https://xxxxx.supabase.co
+   SUPABASE_SERVICE_KEY=your-service-role-key
+   PORT=5000
+   FRONTEND_URL=http://127.0.0.1:5173
+   ```
+
+4. **Start the development server**:
+   ```bash
+   npm run dev
+   ```
+   The backend API will run on `http://127.0.0.1:5000`.  
+   Tables and indexes are created automatically on first start.
+
+### Frontend Setup
+
+1. **Navigate to the frontend directory**:
+   ```bash
+   cd frontend
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment variables**:
+   Create a `.env` file in the `frontend/` directory:
+   ```
+   VITE_SUPABASE_URL=https://xxxxx.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   VITE_API_BASE_URL=http://127.0.0.1:5000
+   ```
+
+4. **Start the development server**:
    ```bash
    npm run dev
    ```
    The frontend will run on `http://127.0.0.1:5173`
 
-4. **Open in browser**:
-   Navigate to `http://127.0.0.1:5173`
+5. **Open in browser**:
+   Navigate to `http://127.0.0.1:5173` and sign up for a teacher account.
 
-### Configuration (Optional)
+### One-command setup (from repo root)
 
-- **Frontend API URL**: Set `VITE_API_BASE_URL` in `frontend/.env` if backend runs on a different port
-- **Backend CORS**: Set `FRONTEND_URL` environment variable if frontend runs on a different port
+```bash
+npm run setup   # installs dependencies for backend, frontend, and functions
+npm run dev:backend   # start backend
+npm run dev:frontend  # start frontend (in a separate terminal)
+```
 
 ---
 
 ## 📡 API Endpoints
 
+> All endpoints (except `/health`) require a valid Supabase JWT in the `Authorization: Bearer <token>` header.
+
 ### Data Retrieval
-- `GET /api/attendance` - Get filtered attendance records
-  - Query params: `course`, `threshold`, `search`, `exclude_courses`
+- `GET /api/attendance` - Get filtered, paginated attendance records
+  - Query params: `course`, `threshold`, `search`, `exclude_courses`, `page`, `per_page`
 - `GET /api/stats` - Get overall statistics (total students, courses, etc.)
-- `GET /api/filtered_stats` - Get statistics for filtered view
+- `GET /api/filtered_stats` - Get statistics for the current filter view
   - Query params: `course`, `threshold`, `search`, `exclude_courses`
-- `GET /api/courses` - Get list of all courses
+- `GET /api/courses` - Get list of all courses for the authenticated user
 
 ### Data Upload & Modification
-- `POST /upload` - Upload Excel or ZIP files (multipart/form-data)
-- `DELETE /delete_record/:id` - Delete specific attendance record
-- `POST /clear_all_data` - Clear all data from database
+- `POST /upload` - Upload Excel files (multipart/form-data, up to 20 files)
+- `DELETE /delete_record/:id` - Delete a specific attendance record
+- `POST /clear_all_data` - Clear all data for the authenticated user
 
 ### Export
-- `GET /export/excel` - Export filtered data to Excel
-  - Query params: `course`, `threshold`, `search`, `exclude_courses`, `filter_info`
-- `GET /export/pdf` - Export filtered data to PDF
-  - Query params: `course`, `threshold`, `search`, `exclude_courses`, `filter_info`
+- `POST /export/excel` - Export filtered data to Excel
+  - Body (JSON): `course`, `threshold`, `search`, `exclude_courses`
+- `POST /export/pdf` - Export filtered data to PDF
+  - Body (JSON): `course`, `threshold`, `search`, `exclude_courses`
+
+### Health
+- `GET /health` - Check server and database connectivity
 
 ---
 
@@ -171,17 +214,17 @@ The system provides real-time statistics, color-coded attendance indicators, and
 ### Backend
 | Technology | Version | Purpose |
 |-----------|---------|---------|
-| Flask | 3.0+ | Web framework and REST API |
-| Flask-SQLAlchemy | 3.1+ | Database ORM |
-| Flask-CORS | 4.0+ | Cross-origin resource sharing |
-| Pandas | 2.0+ | Excel file processing |
-| OpenPyXL | 3.1+ | Excel file reading |
-| XlsxWriter | 3.2+ | Excel file writing/export |
-| ReportLab | 4.0+ | PDF generation |
-| SQLAlchemy | 2.0+ | Database toolkit |
-| psycopg2-binary | 2.9+ | PostgreSQL adapter |
-| python-dotenv | 1.0+ | Environment variable management |
-| Werkzeug | 2.3+ | WSGI utilities |
+| Node.js | 18+ | Runtime |
+| Express | 4.19+ | Web framework and REST API |
+| TypeScript | 5.6+ | Type-safe JavaScript |
+| pg | 8.0+ | PostgreSQL client with connection pooling |
+| @supabase/supabase-js | 2.86+ | Supabase Auth JWT verification |
+| Multer | 1.4+ | Multipart file upload handling |
+| ExcelJS | 4.4+ | Excel file reading and export |
+| PDFKit | 0.15+ | PDF generation |
+| dotenv | 16+ | Environment variable management |
+| cors | 2.8+ | Cross-origin resource sharing |
+| Morgan | 1.10+ | HTTP request logging |
 
 ### Frontend
 | Technology | Version | Purpose |
@@ -189,44 +232,111 @@ The system provides real-time statistics, color-coded attendance indicators, and
 | React | 19.1+ | UI framework |
 | TypeScript | 5.8+ | Type-safe JavaScript |
 | Vite | 7.1+ | Build tool and dev server |
+| React Router | 7.9+ | Client-side routing |
 | Bootstrap | 5.3+ | CSS framework |
-| JSZip | 3.10+ | ZIP file extraction |
+| @supabase/supabase-js | 2.86+ | Authentication (sign up / login / session) |
+| JSZip | 3.10+ | Client-side ZIP file extraction |
+
+### Deployment
+| Technology | Purpose |
+|-----------|---------|
+| Firebase Hosting | Serves the compiled React frontend |
+| Firebase Functions | Hosts the Express backend as a Cloud Function |
+| Supabase | PostgreSQL database + Auth provider |
 
 ---
 
 ## 🗄️ Database Schema
 
-### Student
-- `id` (Primary Key)
-- `registration_no` (Unique)
-- `name`
-- `created_at`
+### students
+- `id` (Primary Key, serial)
+- `user_id` (VARCHAR — Supabase Auth user ID)
+- `admission_no` (VARCHAR, optional)
+- `registration_no` (VARCHAR, not null)
+- `name` (VARCHAR, not null)
+- `created_at` (TIMESTAMP)
+- **Unique constraint**: `(user_id, registration_no)`
 
-### Course
-- `id` (Primary Key)
-- `course_code` (Unique)
-- `course_name`
-- `created_at`
+### courses
+- `id` (Primary Key, serial)
+- `user_id` (VARCHAR — Supabase Auth user ID)
+- `course_code` (VARCHAR, not null)
+- `course_name` (VARCHAR, not null)
+- `created_at` (TIMESTAMP)
+- **Unique constraint**: `(user_id, course_code)`
 
-### AttendanceRecord
-- `id` (Primary Key)
-- `student_id` (Foreign Key → Student)
-- `course_id` (Foreign Key → Course)
-- `attended_periods`
-- `conducted_periods`
-- `attendance_percentage`
-- `created_at`
-- **Unique constraint**: `(student_id, course_id)`
+### attendance_records
+- `id` (Primary Key, serial)
+- `user_id` (VARCHAR — Supabase Auth user ID)
+- `student_id` (Foreign Key → students)
+- `course_id` (Foreign Key → courses)
+- `attended_periods` (INTEGER)
+- `conducted_periods` (INTEGER)
+- `attendance_percentage` (DECIMAL 5,2)
+- `upload_date` (TIMESTAMP)
+- **Unique constraint**: `(user_id, student_id, course_id)`
+
+> Tables and indexes are created automatically at server startup via the built-in migration runner.
 
 ---
 
 ## 📁 Project Structure
 
-See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed directory structure and file descriptions.
+```
+attendance-app/
+├── backend/                    # Express.js + TypeScript backend
+│   ├── src/
+│   │   ├── index.ts            # App entry point, server startup
+│   │   ├── db/index.ts         # PostgreSQL pool, queries, migrations
+│   │   ├── middleware/auth.ts  # Supabase JWT auth middleware
+│   │   ├── routes/
+│   │   │   ├── api.ts          # Attendance, stats, courses endpoints
+│   │   │   ├── upload.ts       # File upload route
+│   │   │   └── export.ts       # Excel & PDF export routes
+│   │   ├── services/
+│   │   │   └── attendanceService.ts  # Business logic & caching
+│   │   └── utils/
+│   │       ├── excelProcessor.ts     # Excel parsing & DB save
+│   │       └── exportUtils.ts        # Excel/PDF report generation
+│   └── package.json
+├── frontend/                   # React + TypeScript frontend
+│   ├── src/
+│   │   ├── App.tsx             # Router + AuthProvider setup
+│   │   ├── components/
+│   │   │   ├── Navbar.tsx      # Top navigation bar
+│   │   │   └── ProtectedRoute.tsx  # Auth guard
+│   │   ├── contexts/
+│   │   │   └── AuthContext.tsx # Supabase auth state & helpers
+│   │   ├── lib/
+│   │   │   ├── api.ts          # API client (attaches auth tokens)
+│   │   │   └── supabase.ts     # Supabase client
+│   │   └── pages/
+│   │       ├── Dashboard.tsx   # Main dashboard
+│   │       ├── Upload.tsx      # File upload page
+│   │       ├── Login.tsx       # Sign-in page
+│   │       └── Signup.tsx      # Sign-up page
+│   └── package.json
+├── functions/                  # Firebase Cloud Functions
+│   └── src/index.ts            # Express app as Firebase Function
+├── firebase.json               # Firebase Hosting + Functions config
+├── package.json                # Root scripts (setup, build, deploy)
+└── README.md
+```
 
 ---
 
 ## 🎨 User Interface Features
+
+### Authentication Pages
+- Clean login and signup forms with validation
+- Show/hide password toggle
+- Error messages for invalid credentials or duplicate accounts
+- Auto-redirect to dashboard after successful authentication
+
+### Navbar
+- Displays the logged-in teacher's name or email
+- Links to Dashboard and Upload pages with active highlighting
+- Logout button to securely end the session
 
 ### Hover-to-Open Dropdowns
 - Dropdowns open automatically on hover for quick access
@@ -246,28 +356,40 @@ See [PROJECT_STRUCTURE.md](./PROJECT_STRUCTURE.md) for detailed directory struct
 
 ---
 
-## 🔒 Data Management
+## 🔒 Data Management & Security
 
-- Database options:
-  - **PostgreSQL (Supabase)**: Cloud-hosted, recommended for production
-  - **SQLite**: Local file stored in `instance/attendance.db` (auto-created)
-- Uploaded files temporarily stored in `uploads/` directory
-- All exports are generated on-the-fly (not stored permanently)
+- **User data isolation**: All database queries are scoped by `user_id` — no cross-user data leakage
+- **JWT authentication**: Every API request is verified via Supabase Auth before touching the database
+- **Database**: PostgreSQL hosted on Supabase (cloud-managed, auto-backups)
+- All exports are generated on-the-fly and never stored permanently on the server
 
 ---
 
-## 🚀 Deployment Notes
+## 🚀 Deployment
 
-- **Database**: Use PostgreSQL (Supabase recommended) for production - see [SUPABASE_SETUP.md](SUPABASE_SETUP.md)
-- **Static Files**: Use a CDN for frontend assets
-- **Environment Variables**: Configure `FRONTEND_URL` and `VITE_API_BASE_URL`
-- **Security**: Add authentication/authorization for production use
-- **CORS**: Restrict CORS origins in production
+### Firebase Hosting (Frontend)
+```bash
+npm run build:frontend          # Build the React app
+npm run deploy:hosting          # Deploy to Firebase Hosting
+```
+
+### Firebase Functions (Backend)
+```bash
+npm run deploy:functions        # Build & deploy backend as Cloud Function
+```
+
+### Full deployment
+```bash
+npm run deploy                  # Build frontend + deploy both hosting and functions
+```
+
+### Environment Variables for Production
+- **Backend**: `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `FRONTEND_URL`
+- **Frontend**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_API_BASE_URL`
 
 ---
 
 This project is built for academic purposes.
-
 
 ---
 
