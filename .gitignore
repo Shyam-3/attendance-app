@@ -13,6 +13,7 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
+/package-lock.json
 
 # Frontend
 frontend/node_modules/
@@ -49,8 +50,11 @@ yarn-debug.log*
 
 # Environment variables
 .env
-.env.local
-.env.production
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
 
 # Firebase
 .firebase/
@@ -72,9 +76,3 @@ functions/prisma/
 *.md
 !README.md
 !DOCUMENTATION.md
-!CLEANUP.md
-
-# Generated exports (optional - uncomment if you don't want to track exports)
-# *.pdf
-# *.xlsx
-# *.xls
