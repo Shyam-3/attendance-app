@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Attendance Management System with Firebase Hosting",
   "scripts": {
+    "dev:full": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",
     "build:backend": "cd backend && npm run build",
@@ -27,5 +28,9 @@
   "license": "ISC",
   "dependencies": {
     "@prisma/client": "^7.1.0"
+  },
+  "devDependencies": {
+    "baseline-browser-mapping": "^2.10.0",
+    "concurrently": "^9.2.1"
   }
 }

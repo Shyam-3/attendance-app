@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { canReachSupabaseAuth, supabase } from './supabase';
 
 export interface AttendanceQuery {
   course?: string;
@@ -27,9 +27,32 @@ if (typeof window !== 'undefined') {
   }
 }
 
+async function getSessionOrThrow() {
+  try {
+    const reachable = await canReachSupabaseAuth();
+    if (!reachable) {
+      throw new Error('Supabase auth endpoint unreachable');
+    }
+
+    const { data: { session }, error } = await supabase.auth.getSession();
+    if (error) {
+      throw error;
+    }
+    return session;
+  } catch (error) {
+    console.error('[API] Supabase session retrieval failed:', error);
+    try {
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch {
+      // no-op: best effort cleanup
+    }
+    throw new Error('Authentication service is currently unreachable. Check your internet/VPN/firewall and try again.');
+  }
+}
+
 // Helper to get auth headers
 async function getAuthHeaders(): Promise<HeadersInit> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const session = await getSessionOrThrow();
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
   };
@@ -89,7 +112,7 @@ export async function fetchCourses() {
 export async function uploadFiles(files: File[]) {
   const form = new FormData();
   files.forEach(f => form.append('files', f));
-  const { data: { session } } = await supabase.auth.getSession();
+  const session = await getSessionOrThrow();
   const headers: HeadersInit = {};
   if (session?.access_token) {
     headers['Authorization'] = `Bearer ${session.access_token}`;
@@ -121,7 +144,7 @@ export async function clearAllData() {
 
 export async function exportExcel(params: AttendanceQuery = {}) {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = await getSessionOrThrow();
     if (!session?.access_token) throw new Error('Not authenticated');
     
     const body: any = {};
@@ -168,7 +191,7 @@ export async function exportExcel(params: AttendanceQuery = {}) {
 
 export async function exportPdf(params: AttendanceQuery = {}) {
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const session = await getSessionOrThrow();
     if (!session?.access_token) throw new Error('Not authenticated');
     
     const body: any = {};

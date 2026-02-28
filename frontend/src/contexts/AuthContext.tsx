@@ -1,6 +1,6 @@
 import type { Session, User } from '@supabase/supabase-js';
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { canReachSupabaseAuth, supabase } from '../lib/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -19,23 +19,59 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+    // Get initial session (guard network/auth refresh failures)
+    const initSession = async () => {
+      try {
+        const reachable = await canReachSupabaseAuth();
+        if (!reachable) {
+          setSession(null);
+          setUser(null);
+          return;
+        }
 
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
+        const { data: { session }, error } = await supabase.auth.getSession();
+        if (error) {
+          throw error;
+        }
+        setSession(session);
+        setUser(session?.user ?? null);
+      } catch (error) {
+        console.error('[Auth] Failed to initialize session:', error);
+        setSession(null);
+        setUser(null);
+        try {
+          await supabase.auth.signOut({ scope: 'local' });
+        } catch {
+          // no-op: best effort cleanup
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
 
-    return () => subscription.unsubscribe();
+    initSession();
+
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    const initAuthListener = async () => {
+      const reachable = await canReachSupabaseAuth();
+      if (!reachable) {
+        return;
+      }
+
+      // Listen for auth changes
+      const listener = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        setLoading(false);
+      });
+
+      subscription = listener.data.subscription;
+    };
+
+    initAuthListener();
+
+    return () => subscription?.unsubscribe();
   }, []);
 
   const signUp = async (email: string, password: string, name: string) => {
@@ -74,7 +110,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: 'local' });
   };
 
   return (
