@@ -4,6 +4,7 @@
     "noImplicitReturns": true,
     "noUnusedLocals": true,
     "outDir": "lib",
+    "rootDir": "..",
     "sourceMap": true,
     "strict": true,
     "target": "ES2021",
@@ -14,6 +15,12 @@
   },
   "compileOnSave": true,
   "include": [
-    "src"
+    "src",
+    "../backend/src"
+  ],
+  "exclude": [
+    "lib",
+    "../backend/dist",
+    "node_modules"
   ]
 }

@@ -11,12 +11,45 @@ import uploadRouter from './routes/upload';
 const app = express();
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://127.0.0.1:5173';
+
+function parseEnvUrls(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
+}
+
+function resolveFrontendUrl(): string {
+  const fromPrimary = parseEnvUrls(process.env.FRONTEND_URL);
+  const fromFallback = parseEnvUrls(process.env.FRONTEND_URL_FALLBACK);
+  const fromDev = parseEnvUrls(process.env.DEV_FRONTEND_URL);
+  return fromPrimary[0] || fromFallback[0] || fromDev[0] || 'http://127.0.0.1:5173';
+}
+
+const FRONTEND_URL = resolveFrontendUrl();
+const allowedOrigins = Array.from(new Set([
+  ...parseEnvUrls(process.env.FRONTEND_URL),
+  ...parseEnvUrls(process.env.FRONTEND_URL_FALLBACK),
+  ...parseEnvUrls(process.env.DEV_FRONTEND_URL),
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'https://attendance-app-501df.web.app',
+  'https://attendance-app-501df.firebaseapp.com'
+]));
 
 app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','DELETE'],
+  origin(origin, cb) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      cb(null, true);
+      return;
+    }
+    cb(new Error(`CORS blocked: ${origin}`));
+  },
+  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type'],
   exposedHeaders: ['Content-Disposition'],
+  credentials: true,
 }));
 app.use(morgan('dev'));
 app.use(express.json());
@@ -41,11 +74,12 @@ app.get('/health', async (_req, res) => {
 
 app.use('/api', apiRouter());
 app.use('/export', exportRouter());
+app.use('/mobile/export', exportRouter());
 app.use('/upload', uploadRouter());
 
 // Delete and clear routes at root level (matching Flask)
 app.delete('/delete_record/:id', authenticateUser, async (req: AuthRequest, res) => {
-  const { AttendanceService } = await import('./services/attendanceService');
+  const { AttendanceService } = await import('./services/attendanceService.js');
   const userId = req.userId!;
   const id = Number(req.params.id);
   try {
@@ -61,7 +95,7 @@ app.delete('/delete_record/:id', authenticateUser, async (req: AuthRequest, res)
 });
 
 app.post('/clear_all_data', authenticateUser, async (req: AuthRequest, res) => {
-  const { AttendanceService } = await import('./services/attendanceService');
+  const { AttendanceService } = await import('./services/attendanceService.js');
   const userId = req.userId!;
   try {
     const success = await AttendanceService.clearAllData(userId);

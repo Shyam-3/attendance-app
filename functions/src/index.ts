@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 import * as functions from 'firebase-functions';
 import morgan from 'morgan';
+import { authenticateUser, type AuthRequest } from '../../backend/src/middleware/auth';
 import apiRouter from '../../backend/src/routes/api';
 import exportRouter from '../../backend/src/routes/export';
 import uploadRouter from '../../backend/src/routes/upload';
@@ -43,17 +44,17 @@ app.get('/health', async (_req, res) => {
 });
 
 // Routes
-app.use('/api', apiRouter(prisma));
-app.use('/export', exportRouter(prisma));
-app.use('/upload', uploadRouter(prisma));
+app.use('/api', apiRouter());
+app.use('/export', exportRouter());
+app.use('/upload', uploadRouter());
 
 // Delete and clear routes
-app.delete('/delete_record/:id', async (req, res) => {
+app.delete('/delete_record/:id', authenticateUser, async (req: AuthRequest, res) => {
   const { AttendanceService } = await import('../../backend/src/services/attendanceService');
-  const attendanceService = new AttendanceService(prisma);
+  const userId = req.userId!;
   const id = Number(req.params.id);
   try {
-    const success = await attendanceService.deleteAttendanceRecord(id);
+    const success = await AttendanceService.deleteAttendanceRecord(userId, id);
     if (success) {
       res.json({ success: true, message: 'Record deleted successfully' });
     } else {
@@ -64,11 +65,11 @@ app.delete('/delete_record/:id', async (req, res) => {
   }
 });
 
-app.post('/clear_all_data', async (_req, res) => {
+app.post('/clear_all_data', authenticateUser, async (req: AuthRequest, res) => {
   const { AttendanceService } = await import('../../backend/src/services/attendanceService');
-  const attendanceService = new AttendanceService(prisma);
+  const userId = req.userId!;
   try {
-    const success = await attendanceService.clearAllData();
+    const success = await AttendanceService.clearAllData(userId);
     if (success) {
       res.json({ success: true, message: 'All data cleared successfully' });
     } else {

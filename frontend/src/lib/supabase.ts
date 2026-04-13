@@ -22,9 +22,18 @@ export async function canReachSupabaseAuth(timeoutMs = 4000): Promise<boolean> {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), timeoutMs);
     const healthUrl = `${supabaseUrl}/auth/v1/health`;
-    const res = await fetch(healthUrl, { method: 'GET', signal: controller.signal });
+    const res = await fetch(healthUrl, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+      },
+    });
     window.clearTimeout(timer);
-    lastReachabilityResult = res.ok;
+
+    // Treat non-5xx responses as reachable so auth policy responses don't look like outages.
+    lastReachabilityResult = res.status < 500;
   } catch {
     lastReachabilityResult = false;
   }

@@ -6,12 +6,27 @@ import { ExcelProcessor } from '../utils/excelProcessor';
 
 const upload = multer({ limits: { fileSize: 16 * 1024 * 1024 } });
 
+function parseEnvUrls(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
+}
+
+function resolveFrontendUrl(): string {
+  const fromPrimary = parseEnvUrls(process.env.FRONTEND_URL);
+  const fromFallback = parseEnvUrls(process.env.FRONTEND_URL_FALLBACK);
+  const fromDev = parseEnvUrls(process.env.DEV_FRONTEND_URL);
+  return fromPrimary[0] || fromFallback[0] || fromDev[0] || 'http://127.0.0.1:5173';
+}
+
 export default function uploadRouter() {
   const router = Router();
   const excelProcessor = new ExcelProcessor();
 
   router.get('/', (_req, res) => {
-    const frontend = process.env.FRONTEND_URL || 'http://127.0.0.1:5173';
+    const frontend = resolveFrontendUrl();
     res.redirect(`${frontend}/upload`);
   });
 
