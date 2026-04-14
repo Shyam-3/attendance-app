@@ -34,9 +34,10 @@ function resolveFrontendUrl(): string {
   return fromPrimary[0] || fromFallback[0] || fromDev[0] || 'http://127.0.0.1:5173';
 }
 
+app.options('*', cors());
+
 const FRONTEND_URL = resolveFrontendUrl();
 
-// 2. UPDATE YOUR CORS CONFIGURATION
 const allowedOrigins = [
   'https://attendance-app-501df.web.app',
   'http://localhost:5173',
@@ -45,7 +46,6 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Whitelist the origin seen in your Logcat: https://attendance-app-501df.web.app
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -58,8 +58,6 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
-// 3. EXPLICITLY RESPOND TO OPTIONS PREFLIGHT
-app.options('*', cors());
 
 app.use(morgan('dev'));
 app.use(express.json());
