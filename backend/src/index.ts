@@ -12,6 +12,13 @@ const app = express();
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;
 
+// 1. ADD THIS BEFORE ANY OTHER MIDDLEWARE OR ROUTE
+// This will force a log entry in Render for EVERY request, including OPTIONS
+app.use((req, res, next) => {
+  console.log(`[NETWORK LOG] ${req.method} ${req.url} - Origin: ${req.headers.origin || 'None'}`);
+  next();
+});
+
 function parseEnvUrls(value?: string): string[] {
   if (!value) return [];
   return value
@@ -28,32 +35,30 @@ function resolveFrontendUrl(): string {
 }
 
 const FRONTEND_URL = resolveFrontendUrl();
-const allowedOrigins = Array.from(new Set([
-  ...parseEnvUrls(process.env.FRONTEND_URL),
-  ...parseEnvUrls(process.env.FRONTEND_URL_FALLBACK),
-  ...parseEnvUrls(process.env.DEV_FRONTEND_URL),
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
+
+// 2. UPDATE YOUR CORS CONFIGURATION
+const allowedOrigins = [
   'https://attendance-app-501df.web.app',
-  'https://attendance-app-501df.firebaseapp.com'
-]));
+  'http://localhost:5173',
+  process.env.FRONTEND_URL,
+].filter(Boolean) as string[];
 
 app.use(cors({
-  origin(origin, cb) {
+  origin: (origin, callback) => {
+    // Whitelist the origin seen in your Logcat: https://attendance-app-501df.web.app
     if (!origin || allowedOrigins.includes(origin)) {
-      cb(null, true);
-      return;
+      callback(null, true);
+    } else {
+      console.warn(`[CORS BLOCKED] Origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
     }
-    console.warn(`[CORS] Blocked Origin: ${origin}`);
-    cb(new Error(`CORS blocked: ${origin}`));
   },
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Origin'],
-  exposedHeaders: ['Content-Disposition'],
   credentials: true,
+  allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Origin'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
 }));
 
-// MUST BE BEFORE any auth middleware to handle preflights correctly
+// 3. EXPLICITLY RESPOND TO OPTIONS PREFLIGHT
 app.options('*', cors());
 
 app.use(morgan('dev'));

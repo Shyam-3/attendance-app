@@ -18,12 +18,12 @@ export interface AuthRequest extends Request {
 /**
  * Middleware to verify Supabase JWT token and extract user ID
  */
-export async function authenticateUser(
+export const authenticateUser = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-): Promise<void> {
-  // Always allow OPTIONS requests to bypass authentication (CORS preflight)
+) => {
+  // 1. Skip authentication for CORS preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
     return next();
   }
@@ -61,16 +61,16 @@ export async function authenticateUser(
     console.error('Auth middleware error:', error);
     res.status(500).json({ error: 'Authentication failed' });
   }
-}
+};
 
 /**
  * Optional auth - allows requests without token but extracts user if present
  */
-export async function optionalAuth(
+export const optionalAuth = async (
   req: AuthRequest,
   res: Response,
   next: NextFunction
-): Promise<void> {
+) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -92,4 +92,4 @@ export async function optionalAuth(
     // Don't fail on optional auth errors
     next();
   }
-}
+};
