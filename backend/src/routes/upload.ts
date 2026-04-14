@@ -30,7 +30,7 @@ export default function uploadRouter() {
     res.redirect(`${frontend}/upload`);
   });
 
-  router.post('/', authenticateUser, upload.array('files', 21), async (req: AuthRequest, res) => {
+  router.post('/', upload.array('files', 21), authenticateUser, async (req: AuthRequest, res) => {
     const userId = req.userId!;
     const files = req.files as Express.Multer.File[];
     if (!files || files.length === 0) {
