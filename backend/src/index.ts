@@ -34,18 +34,19 @@ function resolveFrontendUrl(): string {
   return fromPrimary[0] || fromFallback[0] || fromDev[0] || 'http://127.0.0.1:5173';
 }
 
-app.options('*', cors());
-
 const FRONTEND_URL = resolveFrontendUrl();
 
+// 1. Define allowed origins
 const allowedOrigins = [
   'https://attendance-app-501df.web.app',
   'http://localhost:5173',
   process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL_FALLBACK,
 ].filter(Boolean) as string[];
 
-app.use(cors({
-  origin: (origin, callback) => {
+// 2. Create the shared CORS configuration object
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
@@ -56,9 +57,11 @@ app.use(cors({
   credentials: true,
   allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Origin'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
-}));
+};
 
-
+// 3. USE THE SHARED corsOptions FOR BOTH CALLS
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
 app.use(morgan('dev'));
 app.use(express.json());
 
