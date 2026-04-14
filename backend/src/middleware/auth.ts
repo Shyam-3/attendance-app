@@ -23,6 +23,11 @@ export async function authenticateUser(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  // Always allow OPTIONS requests to bypass authentication (CORS preflight)
+  if (req.method === 'OPTIONS') {
+    return next();
+  }
+
   try {
     const authHeader = req.headers.authorization;
 

@@ -44,13 +44,18 @@ app.use(cors({
       cb(null, true);
       return;
     }
+    console.warn(`[CORS] Blocked Origin: ${origin}`);
     cb(new Error(`CORS blocked: ${origin}`));
   },
-  methods: ['GET', 'POST', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Authorization', 'Content-Type'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Origin'],
   exposedHeaders: ['Content-Disposition'],
   credentials: true,
 }));
+
+// MUST BE BEFORE any auth middleware to handle preflights correctly
+app.options('*', cors());
+
 app.use(morgan('dev'));
 app.use(express.json());
 
