@@ -21,7 +21,7 @@ export default function ConfirmDialog({
   cancelButtonLabel?: string;
   destructive?: boolean;
   hideCancel?: boolean;
-  variant?: 'confirm' | 'info';
+  variant?: 'confirm' | 'info' | 'error';
   onConfirm: (typed?: string) => void | Promise<void>;
   onCancel?: () => void;
 }) {
@@ -35,8 +35,34 @@ export default function ConfirmDialog({
   }, [open, title, variant, destructive, confirmText, message]);
   if (!open) return null;
   const isInfo = variant === 'info';
-  const computedConfirmLabel = confirmButtonLabel || (isInfo ? 'OK' : 'Confirm');
-  const showCancel = !isInfo && !hideCancel && !!onCancel;
+  const isError = variant === 'error';
+  const isDismissOnly = isInfo || isError; // both info and error are dismiss-only dialogs
+  const computedConfirmLabel = confirmButtonLabel || (isDismissOnly ? 'OK' : 'Confirm');
+  const showCancel = !isDismissOnly && !hideCancel && !!onCancel;
+
+  // Determine icon circle color and icon
+  let iconBgClass = 'bg-primary';
+  let iconClass = 'fa-exclamation';
+  if (isInfo) {
+    iconBgClass = 'bg-success';
+    iconClass = 'fa-check';
+  } else if (isError) {
+    iconBgClass = 'bg-danger';
+    iconClass = 'fa-times';
+  } else if (destructive) {
+    iconBgClass = 'bg-danger';
+    iconClass = 'fa-exclamation';
+  }
+
+  // Determine confirm button color
+  let btnClass = 'btn-primary';
+  if (isInfo) {
+    btnClass = 'btn-success';
+  } else if (isError) {
+    btnClass = 'btn-danger';
+  } else if (destructive) {
+    btnClass = 'btn-danger';
+  }
 
   const overlayStyle: CSSProperties = {
     position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1050,
@@ -50,15 +76,15 @@ export default function ConfirmDialog({
       <div className="card shadow" style={modalStyle}>
         <div className="card-body">
           <div className="d-flex align-items-center mb-2" style={{ gap: 10 }}>
-            <div className={`rounded-circle d-flex align-items-center justify-content-center ${isInfo ? 'bg-success' : (destructive ? 'bg-danger' : 'bg-primary')}`} style={{ width: 34, height: 34 }}>
-              <i className={`fas ${isInfo ? 'fa-check' : 'fa-exclamation'} text-white`} aria-hidden="true"></i>
+            <div className={`rounded-circle d-flex align-items-center justify-content-center ${iconBgClass}`} style={{ width: 34, height: 34 }}>
+              <i className={`fas ${iconClass} text-white`} aria-hidden="true"></i>
             </div>
             <h5 className="mb-0">{title}</h5>
           </div>
           <div className="mb-3 text-muted" style={{ lineHeight: 1.5 }}>
             {message}
           </div>
-          {!isInfo && confirmText && (
+          {!isDismissOnly && confirmText && (
             <div className="mb-3">
               <label htmlFor="confirmInput" className="form-label small mb-1">
                 Type <strong>{confirmText}</strong> to continue
@@ -81,12 +107,12 @@ export default function ConfirmDialog({
               }}>{cancelButtonLabel}</button>
             )}
             <button
-              className={`btn ${isInfo ? 'btn-success' : (destructive ? 'btn-danger' : 'btn-primary')}`}
+              className={`btn ${btnClass}`}
               onClick={() => {
                 console.log('[ConfirmDialog] Confirm clicked:', { typed, confirmText, variant });
                 onConfirm(typed);
               }}
-              disabled={!isInfo && !!confirmText && typed !== confirmText}
+              disabled={!isDismissOnly && !!confirmText && typed !== confirmText}
             >
               {computedConfirmLabel}
             </button>

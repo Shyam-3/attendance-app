@@ -7,6 +7,7 @@ import { authenticateUser, type AuthRequest } from './middleware/auth';
 import apiRouter from './routes/api';
 import exportRouter from './routes/export';
 import uploadRouter from './routes/upload';
+import { AttendanceService } from './services/attendanceService';
 
 const app = express();
 
@@ -40,8 +41,10 @@ const FRONTEND_URL = resolveFrontendUrl();
 const allowedOrigins = [
   'https://attendance-app-501df.web.app',
   'http://localhost:5173',
+  'http://127.0.0.1:5173',
   process.env.FRONTEND_URL,
   process.env.FRONTEND_URL_FALLBACK,
+  process.env.HOST_FRONTEND_URL, // e.g. http://192.168.x.x:5173 for host network access
 ].filter(Boolean) as string[];
 
 // 2. Create the shared CORS configuration object
@@ -112,7 +115,7 @@ app.use('/upload', uploadRouter());
 
 // Delete and clear routes at root level (matching Flask)
 app.delete('/delete_record/:id', authenticateUser, async (req: AuthRequest, res) => {
-  const { AttendanceService } = await import('./services/attendanceService.js');
+  // AttendanceService imported statically at top of file
   const userId = req.userId!;
   const id = Number(req.params.id);
   try {
@@ -128,7 +131,7 @@ app.delete('/delete_record/:id', authenticateUser, async (req: AuthRequest, res)
 });
 
 app.post('/clear_all_data', authenticateUser, async (req: AuthRequest, res) => {
-  const { AttendanceService } = await import('./services/attendanceService.js');
+  // AttendanceService imported statically at top of file
   const userId = req.userId!;
   try {
     const success = await AttendanceService.clearAllData(userId);
@@ -156,9 +159,11 @@ async function startServer() {
     // Run migrations to create tables if needed
     await runMigrations();
     
-    app.listen(PORT, () => {
+    const HOST = '0.0.0.0';
+    app.listen(PORT, HOST, () => {
       console.log('🚀 Starting Attendance Management System...');
-      console.log(`📱 Backend API: http://127.0.0.1:${PORT}`);
+      console.log(`📱 Backend API (local):   http://127.0.0.1:${PORT}`);
+      console.log(`📱 Backend API (network): http://0.0.0.0:${PORT}`);
       console.log(`📊 Health check: http://127.0.0.1:${PORT}/health`);
     });
   } catch (err: any) {

@@ -76,6 +76,7 @@ export default function Dashboard() {
     onConfirm?: (typed?: string) => void | Promise<void>;
   }>({ open: false });
   const [infoDialog, setInfoDialog] = useState<{ open: boolean; title?: string; message?: ReactNode }>({ open: false });
+  const [errorDialog, setErrorDialog] = useState<{ open: boolean; title?: string; message?: ReactNode }>({ open: false });
 
   // Filter changes: reset to page 1 and debounce loads
   useEffect(() => {
@@ -223,12 +224,10 @@ export default function Dashboard() {
 
   async function onDelete(recordId?: number) {
     if (!recordId) {
-      setConfirmState({
+      setErrorDialog({
         open: true,
         title: 'Delete Error',
         message: 'Missing record id.',
-        destructive: false,
-        onConfirm: () => setConfirmState({ open: false })
       });
       return;
     }
@@ -239,10 +238,15 @@ export default function Dashboard() {
       destructive: true,
       onConfirm: async () => {
         setConfirmState({ open: false });
-        await deleteRecord(recordId);
-        await load();
-        await loadFilteredStats();
-        setInfoDialog({ open: true, title: 'Deleted', message: 'The record has been deleted successfully.' });
+        try {
+          await deleteRecord(recordId);
+          await load();
+          await loadFilteredStats();
+          setInfoDialog({ open: true, title: 'Deleted', message: 'The record has been deleted successfully.' });
+        } catch (error) {
+          console.error('Error deleting record:', error);
+          setErrorDialog({ open: true, title: 'Delete Failed', message: 'Failed to delete the record. Please check your connection and try again.' });
+        }
       }
     });
   }
@@ -268,7 +272,7 @@ export default function Dashboard() {
           setInfoDialog({ open: true, title: 'Data Cleared', message: 'All attendance data has been removed successfully.' });
         } catch (error) {
           console.error('Error clearing data:', error);
-          setInfoDialog({ open: true, title: 'Error', message: 'Failed to clear data. Please try again.' });
+          setErrorDialog({ open: true, title: 'Clear Failed', message: 'Failed to clear data. Please check your connection and try again.' });
         }
       }
     });
@@ -427,6 +431,16 @@ export default function Dashboard() {
           destructive={false}
           variant="info"
           onConfirm={() => setInfoDialog({ open: false })}
+        />
+
+        {/* Error Dialog for error messages */}
+        <ConfirmDialog
+          open={errorDialog.open}
+          title={errorDialog.title}
+          message={errorDialog.message}
+          destructive={false}
+          variant="error"
+          onConfirm={() => setErrorDialog({ open: false })}
         />
 
         {/* Export buttons at bottom */}
