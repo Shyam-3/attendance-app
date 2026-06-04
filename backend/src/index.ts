@@ -1,0 +1,170 @@
+import cors from 'cors';
+import 'dotenv/config';
+import express from 'express';
+import morgan from 'morgan';
+import { query, runMigrations } from './db';
+import { authenticateUser, type AuthRequest } from './middleware/auth';
+import apiRouter from './routes/api';
+import exportRouter from './routes/export';
+import uploadRouter from './routes/upload';
+
+const app = express();
+
+const PORT = process.env.PORT ? Number(process.env.PORT) : 5000;
+
+// 1. ADD THIS BEFORE ANY OTHER MIDDLEWARE OR ROUTE
+// This will force a log entry in Render for EVERY request, including OPTIONS
+app.use((req, res, next) => {
+  console.log(`[NETWORK LOG] ${req.method} ${req.url} - Origin: ${req.headers.origin || 'None'}`);
+  next();
+});
+
+function parseEnvUrls(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((url) => url.trim())
+    .filter(Boolean);
+}
+
+function resolveFrontendUrl(): string {
+  const fromPrimary = parseEnvUrls(process.env.FRONTEND_URL);
+  const fromFallback = parseEnvUrls(process.env.FRONTEND_URL_FALLBACK);
+  const fromDev = parseEnvUrls(process.env.DEV_FRONTEND_URL);
+  return fromPrimary[0] || fromFallback[0] || fromDev[0] || 'http://127.0.0.1:5173';
+}
+
+const FRONTEND_URL = resolveFrontendUrl();
+
+// 1. Define allowed origins
+const allowedOrigins = [
+  'https://attendance-app-501df.web.app',
+  'http://localhost:5173',
+  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL_FALLBACK,
+].filter(Boolean) as string[];
+
+// 2. Create the shared CORS configuration object
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.warn(`[CORS BLOCKED] Origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  allowedHeaders: ['Authorization', 'Content-Type', 'Accept', 'Origin'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+};
+
+// 3. USE THE SHARED corsOptions FOR BOTH CALLS
+app.options('*', cors(corsOptions));
+app.use(cors(corsOptions));
+app.use(morgan('dev'));
+app.use(express.json());
+
+app.get('/', (_req, res) => {
+  res.redirect(FRONTEND_URL);
+});
+
+app.get('/health', async (_req, res) => {
+  try {
+    await query('SELECT 1');
+    res.status(200).json({
+      status: 'healthy',
+      database: 'PostgreSQL (pg)',
+      message: 'Database connection successful'
+    });
+  } catch (err:any) {
+    console.error('Health check error:', err);
+    res.status(500).json({ status: 'unhealthy', error: err.message || String(err), message: 'Database connection failed' });
+  }
+});
+
+// Keep-alive endpoint for external cron services (cron-job.org, GitHub Actions)
+// Prevents Supabase free-tier pause (7-day inactivity) and Render cold starts (15-min idle)
+app.get('/keepalive', async (req, res) => {
+  const token = req.headers['x-keepalive-token'];
+  const expectedToken = process.env.KEEPALIVE_SECRET;
+
+  // If a secret is configured, enforce it
+  if (expectedToken && token !== expectedToken) {
+    res.status(403).json({ error: 'Forbidden' });
+    return;
+  }
+
+  try {
+    await query('SELECT 1');
+    console.log(`[KEEPALIVE] Ping OK at ${new Date().toISOString()}`);
+    res.status(200).json({ status: 'alive', timestamp: new Date().toISOString() });
+  } catch (err: any) {
+    console.error('[KEEPALIVE] DB ping failed:', err.message);
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.use('/api', apiRouter());
+app.use('/export', exportRouter());
+app.use('/mobile/export', exportRouter());
+app.use('/upload', uploadRouter());
+
+// Delete and clear routes at root level (matching Flask)
+app.delete('/delete_record/:id', authenticateUser, async (req: AuthRequest, res) => {
+  const { AttendanceService } = await import('./services/attendanceService.js');
+  const userId = req.userId!;
+  const id = Number(req.params.id);
+  try {
+    const success = await AttendanceService.deleteAttendanceRecord(userId, id);
+    if (success) {
+      res.json({ success: true, message: 'Record deleted successfully' });
+    } else {
+      res.status(404).json({ success: false, message: 'Record not found' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: String(err) });
+  }
+});
+
+app.post('/clear_all_data', authenticateUser, async (req: AuthRequest, res) => {
+  const { AttendanceService } = await import('./services/attendanceService.js');
+  const userId = req.userId!;
+  try {
+    const success = await AttendanceService.clearAllData(userId);
+    if (success) {
+      res.json({ success: true, message: 'All data cleared successfully' });
+    } else {
+      res.status(500).json({ success: false, message: 'Error clearing data' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: String(err) });
+  }
+});
+
+app.use((_req, res) => {
+  res.status(404).json({ success: false, error: 'Page not found' });
+});
+
+// Start server
+async function startServer() {
+  try {
+    // Test database connection
+    await query('SELECT 1');
+    console.log('✅ Database ready');
+    
+    // Run migrations to create tables if needed
+    await runMigrations();
+    
+    app.listen(PORT, () => {
+      console.log('🚀 Starting Attendance Management System...');
+      console.log(`📱 Backend API: http://127.0.0.1:${PORT}`);
+      console.log(`📊 Health check: http://127.0.0.1:${PORT}/health`);
+    });
+  } catch (err: any) {
+    console.error('❌ Server failed to start:', err.message);
+    process.exit(1);
+  }
+}
+
+startServer();

@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "attendance-app-501df",
+    "att-app": "attendance-app-501df"
+  },
+  "targets": {},
+  "etags": {}
+}

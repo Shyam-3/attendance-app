@@ -1,0 +1,281 @@
+/* ===== Attendance Tracker — Shared / Global Styles ===== */
+/* Only contains styles used across multiple components or pages */
+
+/* -----------------------------------------------
+   1. DASHBOARD HEADER
+   ----------------------------------------------- */
+.dashboard-header {
+  background: linear-gradient(135deg, var(--color-primary) 0%, #8b5cf6 50%, #a78bfa 100%);
+  color: #ffffff;
+  padding: 2rem 0;
+  margin-bottom: 2rem;
+}
+
+
+
+.dashboard-header h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin: 0;
+}
+
+.dashboard-header .btn-warning {
+  background-color: var(--color-warning);
+  color: var(--color-text);
+  border: none;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 1.25rem;
+  transition: all var(--transition-fast);
+}
+
+.dashboard-header .btn-warning:hover {
+  background-color: #d97706;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
+}
+
+.dashboard-header .btn-light {
+  background-color: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 1.25rem;
+  backdrop-filter: blur(4px);
+  transition: all var(--transition-fast);
+}
+
+.dashboard-header .btn-light:hover {
+  background-color: rgba(255, 255, 255, 0.35);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(255, 255, 255, 0.15);
+}
+
+/* Dashboard header action buttons */
+.dashboard-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* -----------------------------------------------
+   2. ACTION BUTTONS (shared)
+   ----------------------------------------------- */
+.btn-success,
+.btn-info {
+  padding: 0.5rem 1.5rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.btn-success:hover,
+.btn-info:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+/* Primary button */
+.btn-primary {
+  transition: all var(--transition-fast);
+}
+
+.btn-primary:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+/* -----------------------------------------------
+   3. NO DATA / NO BACKLOG MESSAGES
+   ----------------------------------------------- */
+#no-data {
+  color: var(--color-text-muted);
+  padding: 3rem 1rem;
+}
+
+#no-data i {
+  margin-bottom: 1rem;
+  opacity: 0.6;
+  color: var(--color-text-muted);
+}
+
+#no-backlog {
+  color: var(--color-text-muted);
+}
+
+.message-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* -----------------------------------------------
+   4. LOADING STATES
+   ----------------------------------------------- */
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-border);
+  border-top: 2px solid var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* -----------------------------------------------
+   5. UTILITIES
+   ----------------------------------------------- */
+.btn-outline-danger:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(239, 68, 68, 0.25);
+}
+
+/* Spinner */
+.spinner-border-sm {
+  width: 1rem;
+  height: 1rem;
+  border-width: 0.15em;
+}
+
+/* Smooth transitions for interactive elements */
+.btn,
+.file-item,
+.toast,
+.alert {
+  transition: all var(--transition-normal);
+}
+
+/* -----------------------------------------------
+   6. RESPONSIVE — Phone (≤480px)
+   ----------------------------------------------- */
+@media (max-width: 480px) {
+  /* Dashboard header: stack vertically, center */
+  .dashboard-header {
+    padding: 1.25rem 0;
+    text-align: center;
+  }
+
+  .dashboard-header .container {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .dashboard-header h1 {
+    font-size: 1.25rem;
+  }
+
+  /* Full-width buttons on mobile */
+  .dashboard-header .btn-warning,
+  .dashboard-header .btn-light {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Font scaling */
+  .fs-4 {
+    font-size: 1.25rem !important;
+  }
+}
+
+/* -----------------------------------------------
+   7. RESPONSIVE — Tablet portrait (≤768px)
+   ----------------------------------------------- */
+@media (max-width: 768px) {
+  .dashboard-header {
+    padding: 1rem 0;
+    text-align: center;
+  }
+
+  .dashboard-header .container {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .dashboard-header h1 {
+    font-size: 1.35rem;
+  }
+
+  .dashboard-header-actions {
+    justify-content: center;
+    width: 100%;
+  }
+
+  .dashboard-header-actions .btn {
+    flex: 1;
+    min-width: 120px;
+  }
+}
+
+/* -----------------------------------------------
+   8. RESPONSIVE — Small laptop (≤1024px)
+   ----------------------------------------------- */
+@media (max-width: 1024px) {
+  .dashboard-header h1 {
+    font-size: 1.5rem;
+  }
+}
+
+/* -----------------------------------------------
+   9. RESPONSIVE — Large desktop (≥1400px)
+   ----------------------------------------------- */
+@media (min-width: 1400px) {
+  .container {
+    max-width: 1320px;
+  }
+}
+
+/* -----------------------------------------------
+   10. PRINT STYLES
+   ----------------------------------------------- */
+@media print {
+  .filter-section,
+  .btn,
+  .dashboard-header .btn {
+    display: none !important;
+  }
+
+  .dashboard-header {
+    background: none !important;
+    color: var(--color-text) !important;
+    padding: 1rem 0;
+    margin-bottom: 1rem;
+  }
+
+  .attendance-table {
+    box-shadow: none;
+    border: 1px solid var(--color-border);
+  }
+
+  .attendance-table thead th {
+    background: var(--color-background) !important;
+    color: var(--color-text) !important;
+  }
+
+  .attendance-row {
+    break-inside: avoid;
+  }
+
+  .pagination {
+    display: none !important;
+  }
+}

@@ -1,0 +1,36 @@
+name: Keep Services Alive
+
+# This workflow pings the backend /keepalive endpoint on a schedule to prevent:
+# - Supabase free-tier project pausing (7-day inactivity threshold)
+# - Render free-tier cold starts (15-min idle threshold)
+#
+# Primary: cron-job.org pings every 10 minutes
+# Backup:  This GitHub Actions workflow pings every 14 minutes
+#
+# Free-tier math:
+#   cron-job.org  → unlimited free (no concern)
+#   GitHub Actions → ~3,100 runs/month × ~0.02 min each = ~62 min/month (well under 2,000 min free limit)
+
+on:
+  schedule:
+    # Every 14 minutes — staggers with cron-job.org's 10-min pings for better coverage
+    # GitHub cron may delay by a few minutes under load; 14 min keeps us safely under Render's 15-min idle
+    - cron: '*/14 * * * *'
+  workflow_dispatch: # Allow manual trigger for testing
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping Render backend keepalive (also keeps Supabase DB active)
+        run: |
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "X-Keepalive-Token: ${{ secrets.KEEPALIVE_SECRET }}" \
+            "https://attendance-app-3a47.onrender.com/keepalive" \
+            --max-time 30)
+          echo "Keepalive response: HTTP $response"
+          if [ "$response" -ne 200 ]; then
+            echo "::warning::Keepalive returned HTTP $response — backend may be waking up"
+          fi
+          echo "Ping completed at $(date -u '+%Y-%m-%dT%H:%M:%SZ')"
